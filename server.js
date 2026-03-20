@@ -187,6 +187,15 @@ app.delete('/api/missions/:id', (req, res) => {
     res.json({ ok: true });
 });
 
+app.post('/api/missions/:id/push', (req, res) => {
+    const fp = missionFile(req.params.id);
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+    const mission = JSON.parse(fs.readFileSync(fp));
+    const ok = sendToJetson(`mission_save:${JSON.stringify(mission)}`);
+    broadcast({ type: 'mission_status', event: 'pushed', missionId: mission.id, name: mission.name });
+    res.json({ ok });
+});
+
 app.post('/api/missions/:id/execute', (req, res) => {
     const fp = missionFile(req.params.id);
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });

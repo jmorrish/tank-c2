@@ -346,6 +346,7 @@ tbody td{padding:9px 10px;font-size:12px}
     <div class="pfooter">
       <button class="btn btn-muted"  onclick="newM()">NEW</button>
       <button class="btn btn-accent" onclick="saveM()">SAVE</button>
+      <button class="btn btn-warn"   onclick="pushCurrent(this)">⬆ PUSH</button>
       <button class="btn btn-blue"   onclick="runCurrent()">▶ RUN</button>
     </div>
   </div>
@@ -398,7 +399,8 @@ function handle(m){
     updateTele(m.data);
   } else if(m.type==='mission_status'){
     if(m.event==='executing') showBanner(m.name);
-    else if(m.event==='completed'||m.event==='aborted') hideBanner();
+    else if(m.event==='completed'||m.event==='aborted'){hideBanner();clearMissionTarget();}
+    else if(m.event==='pushed') console.log('[mission] pushed to Jetson:',m.name);
   }
 }
 
@@ -412,6 +414,15 @@ function updateTele(d){
   if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'))}
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'))}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
+  // Mode + mission progress from Jetson
+  if(d.mission&&d.mission.running){
+    const idx=(d.mission.waypoint_idx??0)+1,tot=d.mission.waypoint_count||'?';
+    showBanner(`${d.mission.name||'MISSION'} — WP ${idx}/${tot}`);
+    // Show target waypoint on map
+    if(d.mission.target_lat&&map)moveMissionTarget(d.mission.target_lat,d.mission.target_lon);
+  } else if(d.mode&&d.mode!=='mission'){
+    hideBanner();clearMissionTarget();
+  }
 }
 
 // ── Controls ───────────────────────────────────────────────────────────────
@@ -575,6 +586,17 @@ async function saveM(){
   const j=await r.json();if(!m.id&&j.id)curId=j.id;
   alert(`Saved: ${m.name}`);
 }
+async function pushCurrent(btn){
+  if(!wps.length){alert('Add at least one waypoint first.');return}
+  await saveM();if(!curId)return;
+  const orig=btn.textContent;btn.textContent='…';btn.disabled=true;
+  try{
+    const r=await fetch(`/api/missions/${curId}/push`,{method:'POST'});
+    const j=await r.json();
+    btn.textContent=j.ok?'✓ SENT':'⚠ OFFLINE';
+    setTimeout(()=>{btn.textContent=orig;btn.disabled=false},2000);
+  }catch{btn.textContent=orig;btn.disabled=false}
+}
 async function runCurrent(){
   if(!wps.length){alert('Add at least one waypoint first.');return}
   await saveM();if(!curId)return;
@@ -614,6 +636,7 @@ async function loadLib(){
     <td>${m.updated?new Date(m.updated).toLocaleString():'—'}</td>
     <td><div class="rowact">
       <button class="btn btn-accent btn-sm" onclick="loadById('${m.id}')">EDIT</button>
+      <button class="btn btn-warn   btn-sm" onclick="pushById('${m.id}',this)">⬆ PUSH</button>
       <button class="btn btn-blue   btn-sm" onclick="runById('${m.id}',this)">▶ RUN</button>
       <button class="btn btn-muted  btn-sm" onclick="expM('${m.id}','${m.name}')">↓ EXP</button>
       <button class="btn btn-danger btn-sm" onclick="delM('${m.id}',this)">DEL</button>
@@ -621,6 +644,15 @@ async function loadLib(){
   </tr>`).join('');
 }
 async function loadById(id){const m=await fetch(`/api/missions/${id}`).then(r=>r.json());loadMD(m)}
+async function pushById(id,btn){
+  const orig=btn.textContent;btn.textContent='…';btn.disabled=true;
+  try{
+    const r=await fetch(`/api/missions/${id}/push`,{method:'POST'});
+    const j=await r.json();
+    btn.textContent=j.ok?'✓ SENT':'⚠ OFFLINE';
+    setTimeout(()=>{btn.textContent=orig;btn.disabled=false},2000);
+  }catch{btn.textContent=orig;btn.disabled=false}
+}
 async function runById(id,btn){
   const r=await fetch(`/api/missions/${id}/execute`,{method:'POST'});const j=await r.json();
   const name=btn.closest('tr').querySelector('td').textContent;
@@ -641,9 +673,19 @@ function importM(inp){
 }
 
 // ── Banner ─────────────────────────────────────────────────────────────────
-function showBanner(name){document.getElementById('mb').classList.add('show');document.getElementById('mbt').textContent='MISSION RUNNING: '+(name||'').toUpperCase()}
+function showBanner(name){document.getElementById('mb').classList.add('show');document.getElementById('mbt').textContent='MISSION: '+(name||'').toUpperCase()}
 function hideBanner(){document.getElementById('mb').classList.remove('show')}
-async function abortM(){await fetch('/api/missions/abort',{method:'POST'});hideBanner()}
+async function abortM(){await fetch('/api/missions/abort',{method:'POST'});hideBanner();clearMissionTarget()}
+
+// ── Mission target map marker ───────────────────────────────────────────────
+let missionTargetMk=null;
+function moveMissionTarget(lat,lon){
+  if(!map)return;
+  const icon=L.divIcon({className:'',iconSize:[20,20],iconAnchor:[10,10],html:'<div style="width:20px;height:20px;border-radius:50%;background:rgba(255,171,0,.25);border:2px solid #ffab00;box-shadow:0 0 8px #ffab00;animation:blink 1s infinite"></div>'});
+  if(!missionTargetMk)missionTargetMk=L.marker([lat,lon],{icon,zIndexOffset:900}).addTo(map);
+  else missionTargetMk.setLatLng([lat,lon]);
+}
+function clearMissionTarget(){if(missionTargetMk&&map){map.removeLayer(missionTargetMk);missionTargetMk=null}}
 
 // ── Stream ─────────────────────────────────────────────────────────────────
 let streamOnline = false;
