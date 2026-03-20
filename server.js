@@ -24,10 +24,14 @@ let jetsonSocket    = null;
 let jetsonBuffer    = '';
 let lastStatus      = null;
 let jetsonOnline    = false;
-let jetsonReconnecting = false;          // guard against parallel reconnect attempts
+let jetsonReconnecting = false;
 const CONNECT_TIMEOUT_MS = 8000;
 const RECONNECT_DELAY_MS = 3000;
 const clients = new Set();
+
+// Queue for critical commands that must be delivered even after a reconnect.
+// Only the latest abort/stop is kept — no need to replay old ones.
+let pendingCritical = null;  // { cmd, broadcastOnDeliver }
 
 function broadcast(msg) {
     const str = JSON.stringify(msg);
@@ -66,9 +70,16 @@ function connectJetson() {
         console.log('[jetson] Connected');
         jetsonSocket = sock;
         jetsonOnline = true;
-        // TCP keepalive: detect silent drops (e.g. Tailscale blip) within ~15 s
         sock.setKeepAlive(true, 5000);
         broadcast({ type: 'connection', status: 'connected' });
+        // Deliver any critical command that was issued while offline
+        if (pendingCritical) {
+            const { cmd, broadcastOnDeliver } = pendingCritical;
+            pendingCritical = null;
+            sock.write(cmd + '\n');
+            console.log(`[jetson] Delivered queued critical command: ${cmd}`);
+            if (broadcastOnDeliver) broadcast(broadcastOnDeliver);
+        }
     });
 
     sock.on('data', (data) => {
@@ -205,10 +216,32 @@ app.post('/api/missions/:id/execute', (req, res) => {
     res.json({ ok });
 });
 
+// Return the last saved mission state from the Jetson's status (if available)
+app.get('/api/missions/state', (_req, res) => {
+    if (lastStatus && lastStatus.mission && lastStatus.mission.id) {
+        res.json({
+            mission_id:   lastStatus.mission.id,
+            waypoint_idx: lastStatus.mission.waypoint_idx ?? 0
+        });
+    } else {
+        res.json({});
+    }
+});
+
 app.post('/api/missions/abort', (_req, res) => {
     const ok = sendToJetson('mission_abort');
-    broadcast({ type: 'mission_status', event: 'aborted' });
-    res.json({ ok });
+    if (ok) {
+        broadcast({ type: 'mission_status', event: 'aborted' });
+    } else {
+        // Jetson is offline — queue the abort so it fires the moment it reconnects
+        pendingCritical = {
+            cmd: 'mission_abort',
+            broadcastOnDeliver: { type: 'mission_status', event: 'aborted' }
+        };
+        broadcast({ type: 'mission_status', event: 'abort_pending' });
+        console.warn('[jetson] Abort queued — will send on reconnect');
+    }
+    res.json({ ok, queued: !ok });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

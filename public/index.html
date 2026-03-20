@@ -30,10 +30,16 @@ header{display:flex;align-items:center;gap:12px;padding:0 14px;height:46px;backg
 .tab-btn.active{color:var(--accent);border-color:var(--accent);background:rgba(0,230,118,.07)}
 
 /* Mission banner */
-.mbanner{display:none;align-items:center;justify-content:space-between;padding:7px 14px;background:rgba(0,230,118,.08);border-bottom:1px solid var(--accent);flex-shrink:0}
+.mbanner{display:none;align-items:center;justify-content:space-between;padding:7px 14px;background:rgba(0,230,118,.08);border-bottom:1px solid var(--accent);flex-shrink:0;transition:all .3s}
 .mbanner.show{display:flex}
+.mbanner.fault{background:rgba(255,171,0,.1);border-bottom-color:var(--warn)}
+.mbanner.pending{background:rgba(255,23,68,.08);border-bottom-color:var(--danger)}
 .mbdot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blink 1s infinite}
+.mbanner.fault .mbdot{background:var(--warn)}
+.mbanner.pending .mbdot{background:var(--danger)}
 .mbinfo{display:flex;align-items:center;gap:8px;color:var(--accent);font-size:12px;letter-spacing:1px}
+.mbanner.fault .mbinfo{color:var(--warn)}
+.mbanner.pending .mbinfo{color:var(--danger)}
 
 /* Tabs */
 .tab-pane{display:none;flex:1;overflow:hidden}
@@ -46,6 +52,7 @@ header{display:flex;align-items:center;gap:12px;padding:0 14px;height:46px;backg
 .btn-warn  {background:rgba(255,171,0,.1);border-color:var(--warn);color:var(--warn)}.btn-warn:hover{background:var(--warn);color:var(--bg)}
 .btn-danger{background:rgba(255,23,68,.1);border-color:var(--danger);color:var(--danger)}.btn-danger:hover{background:var(--danger);color:#fff}
 .btn-muted {background:rgba(100,116,139,.1);border-color:var(--muted);color:var(--muted)}.btn-muted:hover{background:var(--muted);color:var(--bg)}
+.btn-purple{background:rgba(180,127,254,.1);border-color:var(--purple);color:var(--purple)}.btn-purple:hover{background:var(--purple);color:var(--bg)}
 .btn-sm{padding:4px 9px;font-size:10px}
 input[type=text],input[type=number],select,textarea{background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:var(--r);font:inherit;font-size:12px;width:100%}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
@@ -155,7 +162,10 @@ tbody td{padding:9px 10px;font-size:12px}
 
 <div class="mbanner" id="mb">
   <div class="mbinfo"><div class="mbdot"></div><span id="mbt">MISSION RUNNING</span></div>
-  <button class="btn btn-danger btn-sm" onclick="abortM()">■ ABORT</button>
+  <div style="display:flex;gap:6px;align-items:center">
+    <button class="btn btn-warn btn-sm" id="skipBtn" onclick="skipWP()" style="display:none">⏭ SKIP WP</button>
+    <button class="btn btn-danger btn-sm" onclick="abortM()">■ ABORT</button>
+  </div>
 </div>
 
 <!-- DASHBOARD -->
@@ -398,9 +408,10 @@ function handle(m){
   } else if(m.type==='status'){
     updateTele(m.data);
   } else if(m.type==='mission_status'){
-    if(m.event==='executing') showBanner(m.name);
+    if(m.event==='executing') showBanner(m.name,'ok');
     else if(m.event==='completed'||m.event==='aborted'){hideBanner();clearMissionTarget();}
-    else if(m.event==='pushed') console.log('[mission] pushed to Jetson:',m.name);
+    else if(m.event==='abort_pending') showBanner('ABORT QUEUED — RECONNECTING TO TANK','pending');
+    else if(m.event==='pushed') console.log('[mission] pushed:',m.name);
   }
 }
 
@@ -414,14 +425,22 @@ function updateTele(d){
   if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'))}
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'))}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
-  // Mode + mission progress from Jetson
+  // Mode + mission progress from Jetson telemetry
   if(d.mission&&d.mission.running){
-    const idx=(d.mission.waypoint_idx??0)+1,tot=d.mission.waypoint_count||'?';
-    showBanner(`${d.mission.name||'MISSION'} — WP ${idx}/${tot}`);
-    // Show target waypoint on map
+    const idx=(d.mission.waypoint_idx??0)+1, tot=d.mission.waypoint_count||'?';
+    const name=d.mission.name||'MISSION';
+    const fault=d.mission.fault||'';
+    const faultLabels={'gps_lost':'⚠ GPS LOST','stuck':'⚠ STUCK','wheel_fail':'⚠ WHEEL FAULT'};
+    if(fault&&faultLabels[fault])
+      showBanner(`${faultLabels[fault]} — ${name} WP ${idx}/${tot} PAUSED`,'fault');
+    else
+      showBanner(`${name} — WP ${idx}/${tot}`,'ok');
+    document.getElementById('skipBtn').style.display='';
     if(d.mission.target_lat&&map)moveMissionTarget(d.mission.target_lat,d.mission.target_lon);
   } else if(d.mode&&d.mode!=='mission'){
-    hideBanner();clearMissionTarget();
+    if(!document.getElementById('mb').classList.contains('pending')){
+      hideBanner();clearMissionTarget();
+    }
   }
 }
 
@@ -623,10 +642,26 @@ function loadMD(m){
 document.getElementById('mRt').addEventListener('change',redrawMap);
 
 // ── Library ────────────────────────────────────────────────────────────────
+async function resumeById(id,btn){
+  sendCmd(`mission_resume:${id}`);
+  const name=btn.closest('tr').querySelector('td').textContent;
+  showBanner(name,'ok');
+}
 async function loadLib(){
   const tb=document.getElementById('libbody');
   tb.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:16px;text-align:center">Loading…</td></tr>';
-  const list=await fetch('/api/missions').then(r=>r.json());
+  // Fetch both mission list and any saved resume state in parallel
+  const [list, stateRes] = await Promise.all([
+    fetch('/api/missions').then(r=>r.json()),
+    fetch('/api/missions/state').then(r=>r.ok?r.json():null).catch(()=>null)
+  ]);
+  const savedState = stateRes || {};  // {mission_id, waypoint_idx}
+  // Annotate list with resume info
+  list.forEach(m=>{
+    if(savedState.mission_id===m.id && savedState.waypoint_idx>0){
+      m._resumable=true; m._savedIdx=savedState.waypoint_idx;
+    }
+  });
   if(!list.length){tb.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:16px;text-align:center">No missions saved yet.</td></tr>';return}
   const tcls={patrol:'tp',search:'ts',escort:'te',surveillance:'tv2',custom:'tc'};
   tb.innerHTML=list.map(m=>`<tr>
@@ -638,6 +673,7 @@ async function loadLib(){
       <button class="btn btn-accent btn-sm" onclick="loadById('${m.id}')">EDIT</button>
       <button class="btn btn-warn   btn-sm" onclick="pushById('${m.id}',this)">⬆ PUSH</button>
       <button class="btn btn-blue   btn-sm" onclick="runById('${m.id}',this)">▶ RUN</button>
+      ${m._resumable?`<button class="btn btn-purple btn-sm" onclick="resumeById('${m.id}',this)" title="Resume from last saved waypoint WP${m._savedIdx}">↺ RESUME WP${m._savedIdx}</button>`:''}
       <button class="btn btn-muted  btn-sm" onclick="expM('${m.id}','${m.name}')">↓ EXP</button>
       <button class="btn btn-danger btn-sm" onclick="delM('${m.id}',this)">DEL</button>
     </div></td>
@@ -673,9 +709,28 @@ function importM(inp){
 }
 
 // ── Banner ─────────────────────────────────────────────────────────────────
-function showBanner(name){document.getElementById('mb').classList.add('show');document.getElementById('mbt').textContent='MISSION: '+(name||'').toUpperCase()}
-function hideBanner(){document.getElementById('mb').classList.remove('show')}
-async function abortM(){await fetch('/api/missions/abort',{method:'POST'});hideBanner();clearMissionTarget()}
+function showBanner(name,state='ok'){
+  const mb=document.getElementById('mb');
+  mb.classList.add('show');
+  mb.classList.toggle('fault',  state==='fault');
+  mb.classList.toggle('pending',state==='pending');
+  document.getElementById('mbt').textContent=(name||'').toUpperCase();
+  document.getElementById('skipBtn').style.display=(state==='ok')?'':'none';
+}
+function hideBanner(){
+  const mb=document.getElementById('mb');
+  mb.classList.remove('show','fault','pending');
+  document.getElementById('skipBtn').style.display='none';
+}
+async function abortM(){
+  const r=await fetch('/api/missions/abort',{method:'POST'});
+  const j=await r.json();
+  if(j.ok){hideBanner();clearMissionTarget();}
+  // If queued, the banner update comes via WebSocket mission_status:abort_pending
+}
+async function skipWP(){
+  sendCmd('mission_skip_wp');
+}
 
 // ── Mission target map marker ───────────────────────────────────────────────
 let missionTargetMk=null;
