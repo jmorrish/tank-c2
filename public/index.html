@@ -186,6 +186,7 @@ tbody td{padding:9px 10px;font-size:12px}
       <div class="card-title">▸ DISTANCE</div>
       <div class="dist-big"><span id="dV">—</span><small>metres</small></div>
       <div class="card-row" style="margin-top:4px"><span class="card-label" style="font-size:10px">Age</span><span class="tv" id="dA" style="font-size:10px">—</span></div>
+      <div class="card-row" style="margin-top:6px"><span class="card-label">Det. FPS</span><span class="tv" id="detFps">—</span></div>
     </div>
   </div>
 
@@ -386,6 +387,7 @@ function updateTele(d){
   if(d.gps){const g=d.gps;sv2('gLa',f(g.lat,6));sv2('gLo',f(g.lon,6));sv2('gAl',f(g.alt,1,'m'));sv2('gSp',f(g.speed_knots*1.852,1,'km/h'));sv2('gSa',`${g.sats} / Q${g.quality}`);if(g.quality>0&&g.lat!==0){lastGPS=[g.lat,g.lon];moveTank(g.lat,g.lon)}}
   if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'))}
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'))}
+  if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
 }
 
 // ── Controls ───────────────────────────────────────────────────────────────
