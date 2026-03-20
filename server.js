@@ -20,11 +20,14 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Jetson TCP bridge ─────────────────────────────────────────────────────────
-let jetsonSocket = null;
-let jetsonBuffer = '';
-let lastStatus   = null;
-let jetsonOnline = false;
-const clients    = new Set();
+let jetsonSocket    = null;
+let jetsonBuffer    = '';
+let lastStatus      = null;
+let jetsonOnline    = false;
+let jetsonReconnecting = false;          // guard against parallel reconnect attempts
+const CONNECT_TIMEOUT_MS = 8000;
+const RECONNECT_DELAY_MS = 3000;
+const clients = new Set();
 
 function broadcast(msg) {
     const str = JSON.stringify(msg);
@@ -39,18 +42,36 @@ function sendToJetson(cmd) {
     return false;
 }
 
+function scheduleReconnect() {
+    if (jetsonReconnecting) return;
+    jetsonReconnecting = true;
+    setTimeout(() => { jetsonReconnecting = false; connectJetson(); }, RECONNECT_DELAY_MS);
+}
+
 function connectJetson() {
     console.log(`[jetson] Connecting to ${JETSON_HOST}:${JETSON_PORT}...`);
-    jetsonSocket = new net.Socket();
     jetsonBuffer = '';
     jetsonOnline = false;
 
-    jetsonSocket.connect(JETSON_PORT, JETSON_HOST, () => {
+    const sock = new net.Socket();
+
+    // Bail out if the connect handshake hangs
+    const connectTimer = setTimeout(() => {
+        console.warn('[jetson] Connect timeout — retrying...');
+        sock.destroy();
+    }, CONNECT_TIMEOUT_MS);
+
+    sock.connect(JETSON_PORT, JETSON_HOST, () => {
+        clearTimeout(connectTimer);
         console.log('[jetson] Connected');
+        jetsonSocket = sock;
         jetsonOnline = true;
+        // TCP keepalive: detect silent drops (e.g. Tailscale blip) within ~15 s
+        sock.setKeepAlive(true, 5000);
         broadcast({ type: 'connection', status: 'connected' });
     });
-    jetsonSocket.on('data', (data) => {
+
+    sock.on('data', (data) => {
         jetsonBuffer += data.toString();
         let pos;
         while ((pos = jetsonBuffer.indexOf('\n')) !== -1) {
@@ -60,22 +81,44 @@ function connectJetson() {
             try { lastStatus = JSON.parse(line); broadcast({ type: 'status', data: lastStatus }); } catch {}
         }
     });
-    jetsonSocket.on('close', () => {
-        console.log('[jetson] Disconnected — retrying in 3s...');
-        jetsonOnline = false;
-        jetsonSocket = null;
-        broadcast({ type: 'connection', status: 'disconnected' });
-        setTimeout(connectJetson, 3000);
+
+    sock.on('close', () => {
+        clearTimeout(connectTimer);
+        if (jetsonOnline) {
+            console.log('[jetson] Disconnected');
+            broadcast({ type: 'connection', status: 'disconnected' });
+        }
+        jetsonOnline  = false;
+        jetsonSocket  = null;
+        scheduleReconnect();
     });
-    jetsonSocket.on('error', (err) => {
-        console.error('[jetson] Error:', err.message);
-        jetsonSocket.destroy();
+
+    sock.on('error', (err) => {
+        clearTimeout(connectTimer);
+        console.error('[jetson] Socket error:', err.message);
+        sock.destroy();   // triggers 'close'
     });
 }
+
+// ── WebSocket ping/pong to drop stale browser connections quickly ──────────────
+const WS_PING_INTERVAL = 20000;
+const wsAlive = new WeakMap();
+
+function heartbeat() { wsAlive.set(this, true); }
+
+setInterval(() => {
+    for (const ws of clients) {
+        if (wsAlive.get(ws) === false) { ws.terminate(); continue; }
+        wsAlive.set(ws, false);
+        ws.ping();
+    }
+}, WS_PING_INTERVAL);
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 wss.on('connection', (ws) => {
     clients.add(ws);
+    wsAlive.set(ws, true);
+    ws.on('pong', heartbeat.bind(ws));
     ws.send(JSON.stringify({ type: 'connection', status: jetsonOnline ? 'connected' : 'disconnected' }));
     if (lastStatus) ws.send(JSON.stringify({ type: 'status', data: lastStatus }));
     ws.on('message', (raw) => {
@@ -88,7 +131,8 @@ wss.on('connection', (ws) => {
             }
         } catch {}
     });
-    ws.on('close', () => clients.delete(ws));
+    ws.on('close', () => { clients.delete(ws); wsAlive.delete(ws); });
+    ws.on('error', () => { clients.delete(ws); wsAlive.delete(ws); });
 });
 
 // ── Mission API ───────────────────────────────────────────────────────────────

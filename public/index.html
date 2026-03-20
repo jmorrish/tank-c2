@@ -379,12 +379,14 @@ tbody td{padding:9px 10px;font-size:12px}
 </div>
 
 <script>
-// ── WebSocket ──────────────────────────────────────────────────────────────
-let ws;
+// ── WebSocket — exponential backoff reconnect ──────────────────────────────
+let ws, wsDelay = 1000;
 function connectWS(){
-  ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}`);
-  ws.onclose=()=>setTimeout(connectWS,3000);
-  ws.onmessage=e=>{try{handle(JSON.parse(e.data))}catch{}};
+  ws = new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}`);
+  ws.onopen  = () => { wsDelay = 1000; };   // reset backoff on success
+  ws.onclose = () => { setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 1.5, 15000); };
+  ws.onerror = () => {};   // let onclose handle it
+  ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch {} };
 }
 function sendCmd(c){if(ws?.readyState===1)ws.send(JSON.stringify({cmd:c}))}
 function handle(m){
@@ -644,25 +646,67 @@ function hideBanner(){document.getElementById('mb').classList.remove('show')}
 async function abortM(){await fetch('/api/missions/abort',{method:'POST'});hideBanner()}
 
 // ── Stream ─────────────────────────────────────────────────────────────────
+let streamOnline = false;
+let streamRetryTimer = null;
+
 function streamOk() {
+  streamOnline = true;
   document.getElementById('streamImg').style.display = 'block';
   document.getElementById('streamPlaceholder').style.display = 'none';
   const s = document.getElementById('streamStatus');
   s.textContent = 'LIVE'; s.style.color = 'var(--accent)';
 }
+
 function streamErr() {
+  streamOnline = false;
   document.getElementById('streamImg').style.display = 'none';
   document.getElementById('streamPlaceholder').style.display = 'flex';
   const s = document.getElementById('streamStatus');
   s.textContent = 'NO SIGNAL'; s.style.color = 'var(--danger)';
-  setTimeout(() => {
-    const img = document.getElementById('streamImg');
-    img.src = '/stream?' + Date.now();
-  }, 5000);
+  scheduleStreamRetry(5000);
 }
+
+function scheduleStreamRetry(delay) {
+  clearTimeout(streamRetryTimer);
+  streamRetryTimer = setTimeout(() => {
+    const img = document.getElementById('streamImg');
+    // Swap src to kick a fresh request; onerror/onload will fire again
+    img.src = '/stream?' + Date.now();
+  }, delay);
+}
+
+// Stale-stream watchdog: MJPEG can silently freeze without firing onerror.
+// We periodically sample a pixel from the frame via a hidden canvas;
+// if it hasn't changed for 8 s the stream is frozen so we force a reconnect.
+let _staleCanvas, _staleCtx, _lastPixel = null, _staleCount = 0;
+function initStaleWatchdog() {
+  _staleCanvas = document.createElement('canvas');
+  _staleCanvas.width = _staleCanvas.height = 4;
+  _staleCtx = _staleCanvas.getContext('2d');
+}
+setInterval(() => {
+  if (!streamOnline) return;
+  const img = document.getElementById('streamImg');
+  if (!img.naturalWidth) return;
+  try {
+    _staleCtx.drawImage(img, 0, 0, 4, 4);
+    const px = _staleCtx.getImageData(0, 0, 1, 1).data.join(',');
+    if (px === _lastPixel) {
+      _staleCount++;
+      if (_staleCount >= 4) {   // 4 × 2 s = 8 s frozen
+        console.warn('[stream] Stale frame detected — reconnecting');
+        _staleCount = 0; _lastPixel = null;
+        streamErr();
+      }
+    } else {
+      _staleCount = 0; _lastPixel = px;
+    }
+  } catch {}
+}, 2000);
 
 // ── Init ───────────────────────────────────────────────────────────────────
 initMap();
+initStaleWatchdog();
 connectWS();
 </script>
 </body>

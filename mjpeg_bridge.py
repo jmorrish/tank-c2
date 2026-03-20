@@ -4,48 +4,87 @@ Tank C2 - MJPEG Bridge
 Subscribes to the ZMQ frame publisher (tcp://127.0.0.1:5555) and
 serves the latest frame as an MJPEG stream on http://0.0.0.0:8080/stream
 
+Fully self-recovering:
+  - ZMQ receiver reconnects automatically if the C++ app restarts
+  - HTTP server restarts if it crashes
+  - Run via systemd for OS-level restart on Jetson reboot
+
 Run on the Jetson:
   python3 mjpeg_bridge.py
-
-Or as a systemd service (see README).
 """
 import zmq
 import time
 import threading
+import socket
+import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-ZMQ_ADDR  = "tcp://127.0.0.1:5555"
-HTTP_PORT = 8080
-TARGET_FPS = 25
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+log = logging.getLogger('mjpeg')
 
-ctx  = zmq.Context()
-sock = ctx.socket(zmq.SUB)
-sock.connect(ZMQ_ADDR)
-sock.setsockopt(zmq.SUBSCRIBE, b"")
-sock.setsockopt(zmq.RCVTIMEO, 1000)
-sock.setsockopt(zmq.CONFLATE, 1)   # Keep only latest frame — no build-up
+ZMQ_ADDR       = "tcp://127.0.0.1:5555"
+HTTP_PORT      = 8080
+TARGET_FPS     = 25
+STALE_TIMEOUT  = 5.0   # seconds without a frame before we consider ZMQ dead
 
-latest = None
-lock   = threading.Lock()
+INTERVAL  = 1.0 / TARGET_FPS
+BOUNDARY  = b"--tankframe"
 
-def receiver():
-    global latest
-    print(f"[zmq] Connecting to {ZMQ_ADDR}")
+# Shared state
+latest      = None
+latest_time = 0.0
+lock        = threading.Lock()
+
+
+# ── ZMQ receiver — reconnects automatically when C++ app restarts ────────────
+
+def zmq_receiver():
+    """Runs forever. Reconnects to ZMQ whenever the publisher disappears."""
+    global latest, latest_time
+    ctx = None
+    sock = None
+
     while True:
         try:
+            if ctx is None:
+                ctx = zmq.Context()
+            if sock is None:
+                log.info(f"Connecting to ZMQ at {ZMQ_ADDR}")
+                sock = ctx.socket(zmq.SUB)
+                sock.setsockopt(zmq.SUBSCRIBE, b"")
+                sock.setsockopt(zmq.RCVTIMEO, 2000)   # 2 s receive timeout
+                sock.setsockopt(zmq.CONFLATE, 1)       # keep only latest frame
+                sock.setsockopt(zmq.LINGER, 0)
+                sock.connect(ZMQ_ADDR)
+
             data = sock.recv()
             with lock:
-                latest = data
+                latest      = data
+                latest_time = time.monotonic()
+
         except zmq.Again:
+            # No frame within timeout — publisher may be gone, but ZMQ will
+            # reconnect automatically when it comes back. Just keep looping.
             pass
+
+        except zmq.ZMQError as e:
+            log.warning(f"ZMQ error: {e} — resetting socket in 2s")
+            try:
+                sock.close()
+            except Exception:
+                pass
+            sock = None
+            time.sleep(2.0)
+
         except Exception as e:
-            print(f"[zmq] Error: {e}")
-            time.sleep(0.5)
+            log.warning(f"Unexpected error in receiver: {e}")
+            time.sleep(1.0)
 
-threading.Thread(target=receiver, daemon=True).start()
 
-BOUNDARY = b"--tankframe"
-INTERVAL = 1.0 / TARGET_FPS
+threading.Thread(target=zmq_receiver, daemon=True, name="zmq-recv").start()
+
+
+# ── MJPEG HTTP handler ────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -55,7 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self.send_response(200)
-        self.send_header('Content-Type', f'multipart/x-mixed-replace; boundary=tankframe')
+        self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=tankframe')
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -64,29 +103,51 @@ class Handler(BaseHTTPRequestHandler):
         try:
             while True:
                 t0 = time.monotonic()
+
                 with lock:
                     frame = latest
-                if frame:
-                    try:
-                        self.wfile.write(
-                            BOUNDARY + b"\r\n"
-                            b"Content-Type: image/jpeg\r\n"
-                            b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
-                            frame + b"\r\n"
-                        )
-                        self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
-                        break
+                    age   = t0 - latest_time if latest_time else STALE_TIMEOUT + 1
+
+                if frame and age < STALE_TIMEOUT:
+                    self.wfile.write(
+                        BOUNDARY + b"\r\n"
+                        b"Content-Type: image/jpeg\r\n"
+                        b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
+                        frame + b"\r\n"
+                    )
+                    self.wfile.flush()
+
                 elapsed = time.monotonic() - t0
-                sleep = INTERVAL - elapsed
+                sleep   = INTERVAL - elapsed
                 if sleep > 0:
                     time.sleep(sleep)
+
+        except (BrokenPipeError, ConnectionResetError):
+            pass   # client disconnected — normal
         except Exception:
             pass
 
     def log_message(self, fmt, *args):
-        pass  # suppress per-request logs
+        pass   # suppress per-request access logs
+
+
+# ── Main — HTTP server with restart loop ─────────────────────────────────────
+
+def run_server():
+    while True:
+        try:
+            log.info(f"Starting MJPEG server on http://0.0.0.0:{HTTP_PORT}/stream")
+            # SO_REUSEADDR so we can restart quickly without 'address in use'
+            HTTPServer.allow_reuse_address = True
+            srv = HTTPServer(('0.0.0.0', HTTP_PORT), Handler)
+            srv.serve_forever()
+        except OSError as e:
+            log.error(f"Server error: {e} — retrying in 5s")
+            time.sleep(5.0)
+        except Exception as e:
+            log.error(f"Unexpected server crash: {e} — retrying in 3s")
+            time.sleep(3.0)
+
 
 if __name__ == "__main__":
-    print(f"[mjpeg] Bridge starting — serving on http://0.0.0.0:{HTTP_PORT}/stream")
-    HTTPServer(('0.0.0.0', HTTP_PORT), Handler).serve_forever()
+    run_server()
