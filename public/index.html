@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tank C2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', monospace; font-size: 14px; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d;
+  }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 2px; color: #58a6ff; }
+  #conn-badge {
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    background: #3d1f1f; color: #f85149; transition: all .3s;
+  }
+  #conn-badge.online { background: #1a3a2a; color: #3fb950; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 12px; padding: 12px;
+  }
+
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px;
+  }
+  .card h2 { font-size: 11px; text-transform: uppercase; color: #8b949e; letter-spacing: 1px; margin-bottom: 10px; }
+
+  /* IMU */
+  .imu-row { display: flex; justify-content: space-between; gap: 8px; }
+  .imu-val { flex: 1; text-align: center; }
+  .imu-val .label { font-size: 10px; color: #8b949e; }
+  .imu-val .num { font-size: 26px; font-weight: 700; color: #79c0ff; font-variant-numeric: tabular-nums; }
+  .imu-val .unit { font-size: 11px; color: #8b949e; }
+
+  /* GPS */
+  .gps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .gps-item .label { font-size: 10px; color: #8b949e; }
+  .gps-item .val { font-size: 16px; color: #56d364; font-variant-numeric: tabular-nums; }
+
+  /* Sensors */
+  .sensor-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; }
+  .sensor-row:last-child { border-bottom: none; }
+  .sensor-row .label { color: #8b949e; font-size: 12px; }
+  .sensor-row .val { font-size: 18px; font-weight: 700; color: #e3b341; font-variant-numeric: tabular-nums; }
+
+  /* Map */
+  #map { height: 220px; border-radius: 6px; }
+
+  /* Controls */
+  .controls-card { grid-column: 1 / -1; }
+  .ctrl-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .ctrl-section { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .ctrl-section h3 { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+
+  .dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 3px; }
+  .dpad button { width: 44px; height: 44px; font-size: 18px; border: none; border-radius: 6px;
+    background: #21262d; color: #e6edf3; cursor: pointer; transition: background .1s; }
+  .dpad button:hover { background: #388bfd; }
+  .dpad button:active { background: #1f6feb; }
+  .dpad .empty { background: transparent; pointer-events: none; }
+
+  .ptu-grid { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 3px; }
+  .ptu-grid button { width: 44px; height: 44px; font-size: 16px; border: none; border-radius: 6px;
+    background: #1a2a3a; color: #79c0ff; cursor: pointer; transition: background .1s; }
+  .ptu-grid button:hover { background: #1f6feb; }
+  .ptu-grid button:active { background: #388bfd; }
+  .ptu-grid .empty { background: transparent; pointer-events: none; }
+
+  .stop-btn {
+    padding: 14px 28px; font-size: 16px; font-weight: 700; border: none; border-radius: 8px;
+    background: #da3633; color: white; cursor: pointer; letter-spacing: 1px;
+    transition: background .1s; align-self: center;
+  }
+  .stop-btn:hover { background: #f85149; }
+
+  .speed-ctrl { display: flex; flex-direction: column; gap: 6px; }
+  .speed-ctrl label { font-size: 11px; color: #8b949e; }
+  .speed-ctrl input[type=range] { width: 140px; accent-color: #388bfd; }
+  #speed-display { font-size: 16px; color: #79c0ff; font-weight: 700; text-align: center; }
+
+  /* Log */
+  #log { height: 80px; overflow-y: auto; font-size: 11px; color: #8b949e; background: #0d1117;
+    border: 1px solid #21262d; border-radius: 4px; padding: 6px; margin-top: 10px; font-family: monospace; }
+  #log p { margin: 0; line-height: 1.6; }
+  #log p.ok { color: #3fb950; }
+  #log p.err { color: #f85149; }
+  #log p.info { color: #79c0ff; }
+
+  .age { font-size: 10px; color: #6e7681; margin-left: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#9654; TANK C2</h1>
+  <div id="conn-badge">OFFLINE</div>
+</header>
+
+<div class="grid">
+
+  <!-- IMU -->
+  <div class="card">
+    <h2>IMU <span class="age" id="imu-age"></span></h2>
+    <div class="imu-row">
+      <div class="imu-val">
+        <div class="label">YAW</div>
+        <div class="num" id="imu-yaw">--</div>
+        <div class="unit">deg</div>
+      </div>
+      <div class="imu-val">
+        <div class="label">PITCH</div>
+        <div class="num" id="imu-pitch">--</div>
+        <div class="unit">deg</div>
+      </div>
+      <div class="imu-val">
+        <div class="label">ROLL</div>
+        <div class="num" id="imu-roll">--</div>
+        <div class="unit">deg</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GPS -->
+  <div class="card">
+    <h2>GPS <span class="age" id="gps-age"></span></h2>
+    <div class="gps-grid">
+      <div class="gps-item"><div class="label">LAT</div><div class="val" id="gps-lat">--</div></div>
+      <div class="gps-item"><div class="label">LON</div><div class="val" id="gps-lon">--</div></div>
+      <div class="gps-item"><div class="label">ALT</div><div class="val" id="gps-alt">-- m</div></div>
+      <div class="gps-item"><div class="label">SPEED</div><div class="val" id="gps-speed">-- kn</div></div>
+      <div class="gps-item"><div class="label">COURSE</div><div class="val" id="gps-course">-- °</div></div>
+      <div class="gps-item"><div class="label">SATS / QUAL</div><div class="val" id="gps-sats">-- / --</div></div>
+    </div>
+  </div>
+
+  <!-- Sensors -->
+  <div class="card">
+    <h2>Sensors</h2>
+    <div class="sensor-row">
+      <span class="label">Distance (ToF)</span>
+      <span class="val"><span id="tof-dist">--</span> <small>m</small></span>
+    </div>
+    <div class="sensor-row">
+      <span class="label">Left Encoder</span>
+      <span class="val" id="enc-left">--</span>
+    </div>
+    <div class="sensor-row">
+      <span class="label">Right Encoder</span>
+      <span class="val" id="enc-right">--</span>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="card" style="grid-column: 2 / 4;">
+    <h2>GPS Map</h2>
+    <div id="map"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card controls-card">
+    <h2>Controls</h2>
+    <div class="ctrl-grid">
+
+      <div class="ctrl-section">
+        <h3>Drive</h3>
+        <div class="dpad">
+          <div class="empty"></div>
+          <button title="Forward" onmousedown="drive('fwd')" onmouseup="drive('stop')" ontouchstart="drive('fwd')" ontouchend="drive('stop')">&#9650;</button>
+          <div class="empty"></div>
+          <button title="Left" onmousedown="drive('left')" onmouseup="drive('stop')" ontouchstart="drive('left')" ontouchend="drive('stop')">&#9668;</button>
+          <button title="Stop" onclick="drive('stop')">&#9632;</button>
+          <button title="Right" onmousedown="drive('right')" onmouseup="drive('stop')" ontouchstart="drive('right')" ontouchend="drive('stop')">&#9658;</button>
+          <div class="empty"></div>
+          <button title="Reverse" onmousedown="drive('rev')" onmouseup="drive('stop')" ontouchstart="drive('rev')" ontouchend="drive('stop')">&#9660;</button>
+          <div class="empty"></div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>PTU</h3>
+        <div class="ptu-grid">
+          <div class="empty"></div>
+          <button title="Tilt Up" onmousedown="ptu(0,200)" onmouseup="ptu(0,0)">&#9650;</button>
+          <div class="empty"></div>
+          <button title="Pan Left" onmousedown="ptu(-200,0)" onmouseup="ptu(0,0)">&#9668;</button>
+          <button title="Centre PTU" onclick="ptu(0,0)">&#9673;</button>
+          <button title="Pan Right" onmousedown="ptu(200,0)" onmouseup="ptu(0,0)">&#9658;</button>
+          <div class="empty"></div>
+          <button title="Tilt Down" onmousedown="ptu(0,-200)" onmouseup="ptu(0,0)">&#9660;</button>
+          <div class="empty"></div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>Speed</h3>
+        <div class="speed-ctrl">
+          <label>Wheel speed (steps/s)</label>
+          <input type="range" id="speed-slider" min="100" max="3000" value="800" step="100"
+            oninput="document.getElementById('speed-display').textContent=this.value">
+          <div id="speed-display">800</div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <h3>AI Mode</h3>
+        <button class="stop-btn" onclick="sendCmd('stop_follow')">STOP FOLLOW</button>
+      </div>
+
+    </div>
+    <div id="log"></div>
+  </div>
+
+</div>
+
+<script>
+  // --- WebSocket ---
+  const badge = document.getElementById('conn-badge');
+  let ws, wsReady = false;
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}`);
+
+    ws.onopen = () => { wsReady = true; };
+    ws.onclose = () => { wsReady = false; badge.textContent = 'OFFLINE'; badge.className = ''; setTimeout(connect, 2000); };
+    ws.onerror = () => ws.close();
+
+    ws.onmessage = ({ data }) => {
+      const msg = JSON.parse(data);
+      if (msg.type === 'connection') {
+        badge.textContent  = msg.status === 'connected' ? 'ONLINE' : 'OFFLINE';
+        badge.className    = msg.status === 'connected' ? 'online' : '';
+      } else if (msg.type === 'status') {
+        updateTelemetry(msg.data);
+      } else if (msg.type === 'ack') {
+        logMsg(msg.ok ? `&#10003; ${msg.cmd}` : `&#10007; ${msg.cmd} (Jetson offline)`, msg.ok ? 'ok' : 'err');
+      }
+    };
+  }
+
+  function sendCmd(cmd) {
+    if (ws && wsReady) {
+      ws.send(JSON.stringify({ cmd }));
+    } else {
+      logMsg('Not connected', 'err');
+    }
+  }
+
+  // --- Drive helpers ---
+  function speed() { return parseInt(document.getElementById('speed-slider').value); }
+
+  function drive(dir) {
+    const s = speed();
+    const cmds = {
+      fwd:   `manual_wheel:${s}:${s}`,
+      rev:   `manual_wheel:${-s}:${-s}`,
+      left:  `manual_wheel:${-s}:${s}`,
+      right: `manual_wheel:${s}:${-s}`,
+      stop:  'manual_wheel:0:0'
+    };
+    if (cmds[dir]) sendCmd(cmds[dir]);
+  }
+
+  function ptu(pan, tilt) {
+    sendCmd(`manual_ptu:${pan}:${tilt}`);
+  }
+
+  // --- Telemetry ---
+  const mapEl = document.getElementById('map');
+  let leafMap = null, mapMarker = null;
+
+  function initMap(lat, lon) {
+    if (leafMap) return;
+    leafMap = L.map('map').setView([lat, lon], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(leafMap);
+    mapMarker = L.marker([lat, lon]).addTo(leafMap);
+  }
+
+  function updateMap(lat, lon) {
+    if (!leafMap) { initMap(lat, lon); return; }
+    mapMarker.setLatLng([lat, lon]);
+    leafMap.setView([lat, lon]);
+  }
+
+  function fmt(v, dp=1) {
+    return (v === undefined || v === null || isNaN(v)) ? '--' : Number(v).toFixed(dp);
+  }
+
+  function ageStr(ms) {
+    if (!ms && ms !== 0) return '';
+    if (ms < 2000) return `${Math.round(ms)}ms ago`;
+    return `${(ms/1000).toFixed(1)}s ago`;
+  }
+
+  function updateTelemetry(d) {
+    // IMU
+    if (d.imu) {
+      document.getElementById('imu-yaw').textContent   = fmt(d.imu.yaw);
+      document.getElementById('imu-pitch').textContent = fmt(d.imu.pitch);
+      document.getElementById('imu-roll').textContent  = fmt(d.imu.roll);
+      document.getElementById('imu-age').textContent   = ageStr(d.imu.age_ms);
+    }
+    // GPS
+    if (d.gps) {
+      document.getElementById('gps-lat').textContent    = fmt(d.gps.lat, 6);
+      document.getElementById('gps-lon').textContent    = fmt(d.gps.lon, 6);
+      document.getElementById('gps-alt').textContent    = fmt(d.gps.alt) + ' m';
+      document.getElementById('gps-speed').textContent  = fmt(d.gps.speed_knots, 1) + ' kn';
+      document.getElementById('gps-course').textContent = fmt(d.gps.course_deg, 1) + ' °';
+      document.getElementById('gps-sats').textContent   = `${d.gps.sats} / ${d.gps.quality}`;
+      document.getElementById('gps-age').textContent    = ageStr(d.gps.age_ms);
+      if (d.gps.quality > 0 && d.gps.lat !== 0) updateMap(d.gps.lat, d.gps.lon);
+    }
+    // Encoders
+    if (d.encoders) {
+      document.getElementById('enc-left').textContent  = d.encoders.left;
+      document.getElementById('enc-right').textContent = d.encoders.right;
+    }
+    // ToF
+    if (d.distance_m !== undefined) {
+      document.getElementById('tof-dist').textContent = fmt(d.distance_m, 2);
+    }
+  }
+
+  // --- Log ---
+  const logEl = document.getElementById('log');
+  function logMsg(text, cls='info') {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.innerHTML = `[${new Date().toLocaleTimeString()}] ${text}`;
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+    if (logEl.children.length > 50) logEl.removeChild(logEl.firstChild);
+  }
+
+  // --- Keyboard support ---
+  const keysDown = new Set();
+  document.addEventListener('keydown', (e) => {
+    if (keysDown.has(e.key)) return;
+    keysDown.add(e.key);
+    const map = { ArrowUp:'fwd', ArrowDown:'rev', ArrowLeft:'left', ArrowRight:'right', w:'fwd', s:'rev', a:'left', d:'right' };
+    if (map[e.key]) { e.preventDefault(); drive(map[e.key]); }
+    if (e.key === ' ') { e.preventDefault(); sendCmd('stop_follow'); }
+  });
+  document.addEventListener('keyup', (e) => {
+    keysDown.delete(e.key);
+    const motionKeys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','s','a','d'];
+    if (motionKeys.includes(e.key)) drive('stop');
+  });
+
+  connect();
+  logMsg('Tank C2 ready — WASD or arrows to drive, Space = stop follow', 'info');
+</script>
+</body>
+</html>
