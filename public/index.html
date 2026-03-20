@@ -230,6 +230,20 @@ tbody td{padding:9px 10px;font-size:12px}
       </div>
     </div>
   </div>
+
+  <!-- Video stream -->
+  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative">
+    <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">▸ LIVE FEED</div>
+    <div style="position:absolute;top:8px;right:10px;z-index:10">
+      <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING…</span>
+    </div>
+    <img id="streamImg"
+      src="/stream"
+      alt="Camera feed"
+      style="width:100%;display:block;max-height:360px;object-fit:contain;background:#000"
+      onerror="streamErr()"
+      onload="streamOk()">
+  </div>
 </div>
 
 <!-- MISSION PLANNER -->
@@ -604,6 +618,21 @@ function importM(inp){
 function showBanner(name){document.getElementById('mb').classList.add('show');document.getElementById('mbt').textContent='MISSION RUNNING: '+(name||'').toUpperCase()}
 function hideBanner(){document.getElementById('mb').classList.remove('show')}
 async function abortM(){await fetch('/api/missions/abort',{method:'POST'});hideBanner()}
+
+// ── Stream ─────────────────────────────────────────────────────────────────
+function streamOk() {
+  const s = document.getElementById('streamStatus');
+  if (s) { s.textContent = 'LIVE'; s.style.color = 'var(--accent)'; }
+}
+function streamErr() {
+  const s = document.getElementById('streamStatus');
+  if (s) { s.textContent = 'OFFLINE'; s.style.color = 'var(--danger)'; }
+  // Retry after 3s
+  setTimeout(() => {
+    const img = document.getElementById('streamImg');
+    if (img) img.src = '/stream?' + Date.now();
+  }, 3000);
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 initMap();
