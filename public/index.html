@@ -409,7 +409,17 @@ function handle(m){
     updateTele(m.data);
   } else if(m.type==='mission_status'){
     if(m.event==='executing') showBanner(m.name,'ok');
-    else if(m.event==='completed'||m.event==='aborted'){hideBanner();clearMissionTarget();}
+    else if(m.event==='completed'){
+      console.log('[mission] completed:',m.name,'id:',m.missionId);
+      hideBanner();clearMissionTarget();
+    }
+    else if(m.event==='aborted'){hideBanner();clearMissionTarget();}
+    else if(m.event==='mission_faulted'){
+      const fl={gps_lost:'⚠ GPS LOST',stuck:'⚠ STUCK',wheel_fail:'⚠ WHEEL FAULT'};
+      console.warn('[mission] faulted:',m.fault,'mission:',m.name,'id:',m.missionId);
+      showBanner(`${fl[m.fault]||'⚠ MISSION FAILED'} — ${m.name||''}`, 'fault');
+      clearMissionTarget();
+    }
     else if(m.event==='abort_pending') showBanner('ABORT QUEUED — RECONNECTING TO TANK','pending');
     else if(m.event==='pushed') console.log('[mission] pushed:',m.name);
   }
@@ -438,7 +448,10 @@ function updateTele(d){
     document.getElementById('skipBtn').style.display='';
     if(d.mission.target_lat&&map)moveMissionTarget(d.mission.target_lat,d.mission.target_lon);
   } else if(d.mode&&d.mode!=='mission'){
-    if(!document.getElementById('mb').classList.contains('pending')){
+    const mb=document.getElementById('mb');
+    // Don't auto-clear if a fault or abort-pending banner is showing — those are
+    // cleared explicitly by the mission_faulted / aborted / completed events
+    if(!mb.classList.contains('pending')&&!mb.classList.contains('fault')){
       hideBanner();clearMissionTarget();
     }
   }

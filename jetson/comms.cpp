@@ -441,6 +441,7 @@ bool Comms::startWebIPC(int port) {
                 break;
             }
             LOGI("Web IPC client connected");
+            web_client_.store(client);
 
             // Newline-delimited protocol: one command per line, one JSON response per line.
             // Socket has a 200ms recv timeout so we can push periodic status updates.
@@ -483,6 +484,7 @@ bool Comms::startWebIPC(int port) {
                     lastPush = now;
                 }
             }
+            web_client_.store(-1);
             ::close(client);
             LOGI("Web IPC client disconnected");
         }
@@ -500,6 +502,16 @@ void Comms::stopWebIPC() {
     web_rxRun_.store(false);
     if (web_sock_ >= 0) { ::close(web_sock_); web_sock_ = -1; }
     if (web_rxThread_.joinable()) web_rxThread_.join();
+}
+
+// Send a one-shot event JSON line to the connected VPS client (if any).
+// server.js detects {type:"event"} lines and re-broadcasts them as mission_status
+// without overwriting lastStatus.
+void Comms::sendWebEvent(const std::string& json_str) {
+    int fd = web_client_.load();
+    if (fd < 0) return;
+    std::string line = json_str + "\n";
+    ::send(fd, line.c_str(), line.size(), MSG_NOSIGNAL);
 }
 
 std::string Comms::getStatusJson() const {
@@ -1119,7 +1131,8 @@ void Comms::missionLoop(Comms* self) {
     } while (do_loop && self->mission_run_.load());
 
     // ── Complete ──────────────────────────────────────────────────────────────
-    if (self->mission_run_.load()) {
+    bool natural_completion = self->mission_run_.load();
+    if (natural_completion) {
         LOGI("Mission: complete");
         self->sendWheels(0, 0);
         self->sendPTUVelocity(0, 0);
@@ -1128,5 +1141,45 @@ void Comms::missionLoop(Comms* self) {
         // Clear saved state so a stale resume doesn't restart a completed mission
         std::remove((MISSIONS_DIR + "/_state.json").c_str());
     }
+
+    // ── Fire mission event to VPS ─────────────────────────────────────────────
+    {
+        std::string mission_id, mission_name;
+        {
+            std::lock_guard<std::mutex> lk(self->mission_mtx_);
+            try {
+                auto m = nlohmann::json::parse(self->mission_json_);
+                mission_id   = m.value("id",   "");
+                mission_name = m.value("name", "");
+            } catch (...) {}
+        }
+
+        nlohmann::json ev;
+        ev["type"] = "event";
+        ev["id"]   = mission_id;
+        ev["name"] = mission_name;
+
+        if (natural_completion) {
+            ev["event"] = "mission_completed";
+            LOGI("Mission event: completed — " << mission_name);
+        } else {
+            int fault = self->mission_fault_.load();
+            if (fault != (int)MissionFault::NONE) {
+                // Faulted (GPS/stuck/wheel) — send dedicated event so the UI can keep
+                // the fault banner visible rather than clearing it silently
+                static const char* faultNames[] = {"", "gps_lost", "stuck", "wheel_fail"};
+                ev["event"] = "mission_faulted";
+                ev["fault"] = faultNames[std::clamp(fault, 0, 3)];
+                LOGI("Mission event: faulted (" << ev["fault"] << ") — " << mission_name);
+            }
+            // If fault==NONE the mission was aborted by command; server.js already
+            // broadcast that event from the /api/missions/abort endpoint, so no
+            // duplicate event is sent here.
+        }
+
+        if (ev.contains("event"))
+            self->sendWebEvent(ev.dump());
+    }
+
     LOGI("Mission executor finished");
 }

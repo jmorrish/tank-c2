@@ -89,7 +89,19 @@ function connectJetson() {
             const line = jetsonBuffer.slice(0, pos).trim();
             jetsonBuffer = jetsonBuffer.slice(pos + 1);
             if (!line) continue;
-            try { lastStatus = JSON.parse(line); broadcast({ type: 'status', data: lastStatus }); } catch {}
+            try {
+                const parsed = JSON.parse(line);
+                if (parsed.type === 'event') {
+                    // One-shot event from Jetson (e.g. mission_completed, mission_faulted).
+                    // Re-broadcast as mission_status without overwriting the telemetry cache.
+                    console.log(`[jetson] event: ${parsed.event} id=${parsed.id || ''} fault=${parsed.fault || ''}`);
+                    broadcast({ type: 'mission_status', event: parsed.event,
+                                missionId: parsed.id, name: parsed.name, fault: parsed.fault });
+                } else {
+                    lastStatus = parsed;
+                    broadcast({ type: 'status', data: lastStatus });
+                }
+            } catch {}
         }
     });
 

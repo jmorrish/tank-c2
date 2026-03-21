@@ -111,6 +111,7 @@ private:
 
     // Web IPC
     int web_sock_ = -1;
+    std::atomic<int>  web_client_{-1};  // fd of the currently-connected VPS client (-1 = none)
     std::thread web_rxThread_;
     std::atomic<bool> web_rxRun_{false};
     std::mutex web_mtx_;
@@ -125,6 +126,7 @@ private:
 
     // helpers
     bool sendLine(int sock, std::mutex& mtx, const std::string& label, const std::string& line);
+    void sendWebEvent(const std::string& json_str);  // thread-safe push of a one-shot event line
     static int  openTcpSocket(const std::string& ip, int port);
     static void controlRxLoop(Comms* self);
     static void sensorRxLoop(Comms* self);
