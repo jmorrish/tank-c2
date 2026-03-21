@@ -563,7 +563,8 @@ std::string Comms::getStatusJson() const {
     double dage = 99999.0;
     j["distance_m"]     = getLatestDistance(&dage);
     j["distance_age_ms"] = dage;
-    j["detection_fps"]  = detection_fps_.load();
+    j["detection_fps"]   = detection_fps_.load();
+    j["stream_quality"]  = stream_quality_.load();
 
     // Control mode
     static const char* modeNames[] = {"follow", "manual", "mission", "stopped"};
@@ -756,6 +757,17 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         setMode(ControlMode::MISSION);
         mission_thread_ = std::thread(&Comms::missionLoop, this);
         LOGI("Mission resumed at WP " << saved_idx << ": " << id);
+        return "";
+    }
+
+    // ── Stream quality: stream_quality:<1-100> ────────────────────────────────
+    if (cmd.rfind("stream_quality:", 0) == 0) {
+        try {
+            int q = std::stoi(cmd.substr(15));
+            q = std::clamp(q, 1, 100);
+            stream_quality_.store(q);
+            LOGI("Stream quality set to " << q);
+        } catch (...) {}
         return "";
     }
 

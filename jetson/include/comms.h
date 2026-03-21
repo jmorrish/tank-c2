@@ -52,7 +52,8 @@ public:
 
     float getLatestDistance(double* age_ms=nullptr) const; // meters (or <0 if invalid/none)
 
-    void  setDetectionFPS(float fps) { detection_fps_.store(fps); }
+    void  setDetectionFPS(float fps)  { detection_fps_.store(fps); }
+    int   getStreamQuality() const    { return stream_quality_.load(); }
 
     // Control mode
     ControlMode getMode() const { return static_cast<ControlMode>(mode_.load()); }
@@ -106,6 +107,9 @@ private:
 
     // Detection FPS (set by ObjectDetection)
     std::atomic<float> detection_fps_{0.0f};
+
+    // Stream quality 1-100 (JPEG quality sent to web, tunable at runtime)
+    std::atomic<int> stream_quality_{55};
 
     // Control mode
     std::atomic<int> mode_{0};   // ControlMode::FOLLOW by default

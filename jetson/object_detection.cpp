@@ -282,7 +282,8 @@ void ObjectDetection::mainLoop(){
                 stream_frame = combined;
             }
             std::vector<uchar> buf;
-            std::vector<int> enc_params = {cv::IMWRITE_JPEG_QUALITY, 55};
+            int quality = comms_ ? comms_->getStreamQuality() : 55;
+            std::vector<int> enc_params = {cv::IMWRITE_JPEG_QUALITY, quality};
             cv::imencode(".jpg", stream_frame, buf, enc_params);
             zmq::message_t zmqmsg(buf.size());
             memcpy(zmqmsg.data(), buf.data(), buf.size());

@@ -316,7 +316,13 @@ button,a,[role=button]{touch-action:manipulation}
   <!-- Video stream -->
   <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000;min-height:240px">
     <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">▸ LIVE FEED</div>
-    <div style="position:absolute;top:8px;right:10px;z-index:10">
+    <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
+      <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
+        Q <input id="sqSlider" type="range" min="10" max="95" value="55" step="5"
+            style="width:70px;accent-color:var(--accent);cursor:pointer"
+            oninput="onSQSlider(this.value)">
+        <span id="sqVal">55</span>
+      </label>
       <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING…</span>
     </div>
 
@@ -519,6 +525,7 @@ function updateTele(d){
   if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'));setStale('eL',d.encoders.age_ms>2000)}
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'));setStale('dV',d.distance_age_ms>2000)}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
+  if(d.stream_quality!=null&&!sqDebounce){const sl=document.getElementById('sqSlider');if(sl){sl.value=d.stream_quality;document.getElementById('sqVal').textContent=d.stream_quality;}}
   // Mode + mission progress from Jetson telemetry
   if(d.mission&&d.mission.running){
     const idx=(d.mission.waypoint_idx??0)+1, tot=d.mission.waypoint_count||'?';
@@ -908,6 +915,14 @@ function moveMissionTarget(lat,lon){
   else missionTargetMk.setLatLng([lat,lon]);
 }
 function clearMissionTarget(){if(missionTargetMk&&map){map.removeLayer(missionTargetMk);missionTargetMk=null}}
+
+// ── Stream quality slider ───────────────────────────────────────────────────
+let sqDebounce = null;
+function onSQSlider(v) {
+  document.getElementById('sqVal').textContent = v;
+  clearTimeout(sqDebounce);
+  sqDebounce = setTimeout(() => sendCmd('stream_quality:' + v), 300);
+}
 
 // ── Stream ─────────────────────────────────────────────────────────────────
 let streamOnline = false;
