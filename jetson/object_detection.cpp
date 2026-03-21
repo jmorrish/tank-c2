@@ -197,12 +197,11 @@ void ObjectDetection::mainLoop(){
         for (auto& tr : tracks){
             auto tlwh = tr->get_tlwh();
             cv::Rect bb(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
-            if (!headless_){
-                cv::rectangle(frame, bb, cv::Scalar(0,255,0), 2);
-                cv::putText(frame, std::to_string(tr->track_id),
-                            cv::Point(tlwh[0], tlwh[1]-5),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5, {255,255,255}, 1);
-            }
+            // Draw all track boxes (green) — always, so web stream shows overlays
+            cv::rectangle(frame, bb, cv::Scalar(0,255,0), 2);
+            cv::putText(frame, "ID:" + std::to_string(tr->track_id),
+                        cv::Point(tlwh[0], tlwh[1]-5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, {0,255,0}, 1);
             if (tr->track_id == tracked_id_){
                 best = bb; best_id = tr->track_id; haveBest = true;
             }
@@ -223,6 +222,20 @@ void ObjectDetection::mainLoop(){
             }
         }
         tracked_id_ = haveBest ? best_id : -1;
+
+        // Highlight the active target in cyan + draw crosshair at frame centre
+        if (haveBest){
+            cv::rectangle(frame, best, cv::Scalar(255,255,0), 3);
+            cv::putText(frame, "TARGET",
+                        cv::Point(best.x, best.y - 10),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, {255,255,0}, 2);
+        }
+        // Frame-centre crosshair so you can see alignment
+        {
+            int cx = frame.cols/2, cy = frame.rows/2, cs = 20;
+            cv::line(frame, {cx-cs,cy}, {cx+cs,cy}, {0,200,255}, 1);
+            cv::line(frame, {cx,cy-cs}, {cx,cy+cs}, {0,200,255}, 1);
+        }
 
         // Publish target
         TargetMsg msg;
