@@ -598,13 +598,35 @@ let map,osmL,satL,satOn=false,addMode=false,tankMk=null,wpMks=[],wpPoly=null;
 const COLORS=['#00e676','#00b0ff','#ffab00','#ff6e40','#e040fb','#40c4ff','#69f0ae','#ffd740','#ff6090','#a7ffeb'];
 
 function initMap(){
-  // Use the tank's last known GPS position if available, otherwise default to London
-  const initView = lastGPS ? lastGPS : [51.5,-0.1];
-  map=L.map('map',{zoomControl:true}).setView(initView,lastGPS?17:14);
+  // Start with a world view; locateUser() will pan once we know where the user is
+  map=L.map('map',{zoomControl:true}).setView([20,0],2);
   osmL=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(map);
   satL=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
   map.on('click',e=>{if(addMode){addWP(e.latlng.lat,e.latlng.lng);exitAdd()}});
   map.on('mousemove',e=>document.getElementById('mc').textContent=`${e.latlng.lat.toFixed(6)},  ${e.latlng.lng.toFixed(6)}`);
+  // Pan to best available location: tank GPS → browser geolocation → IP geolocation
+  locateUser();
+}
+function locateUser(){
+  // 1. Tank GPS already known (set by earlier telemetry)
+  if(lastGPS){ map.setView(lastGPS,17); return; }
+  // 2. Browser / device GPS (works on mobile with permission)
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(
+      pos=>{ if(!lastGPS) map.setView([pos.coords.latitude,pos.coords.longitude],15); },
+      ()=>{ ipLocate(); },   // denied or unavailable — fall back to IP
+      {timeout:5000,maximumAge:60000}
+    );
+  } else {
+    ipLocate();
+  }
+}
+function ipLocate(){
+  // 3. IP-based geolocation — free, no key required, ~city accuracy
+  fetch('https://ipapi.co/json/')
+    .then(r=>r.json())
+    .then(d=>{ if(!lastGPS && d.latitude) map.setView([d.latitude,d.longitude],12); })
+    .catch(()=>{}); // silently ignore if offline or blocked
 }
 function toggleSat(){satOn=!satOn;if(satOn){map.removeLayer(osmL);satL.addTo(map)}else{map.removeLayer(satL);osmL.addTo(map)}document.getElementById('satBtn').textContent=satOn?'MAP':'SATELLITE'}
 function ctrTank(){if(lastGPS)map.setView(lastGPS,18)}
