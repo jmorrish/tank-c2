@@ -146,6 +146,56 @@ tbody td{padding:9px 10px;font-size:12px}
 .te{background:rgba(0,230,118,.15);color:var(--accent)}.tv2{background:rgba(180,127,254,.15);color:var(--purple)}
 .tc{background:rgba(100,116,139,.15);color:var(--muted)}
 .rowact{display:flex;gap:5px;flex-wrap:wrap}
+
+/* ── MOBILE / RESPONSIVE ─────────────────────────────────────────────────── */
+.short{display:none}
+
+/* Tablet (≤ 900px) */
+@media(max-width:900px){
+  .tele-grid{grid-template-columns:repeat(2,1fr)}
+}
+
+/* Mobile (≤ 768px) */
+@media(max-width:768px){
+  /* Header: wrap tabs onto second row */
+  header{flex-wrap:wrap;height:auto;min-height:46px;padding:6px 10px}
+  .logo{font-size:13px}
+  .tabs{order:3;width:calc(100% + 20px);margin:4px -10px 0;padding:4px 10px 2px;border-top:1px solid var(--border)}
+  .tab-btn{flex:1;text-align:center;padding:7px 2px;font-size:11px}
+  .full{display:none}.short{display:inline}
+
+  /* Larger tap targets */
+  .btn{min-height:38px}
+  .dpad button,.ptupad button{min-width:44px;min-height:44px}
+
+  /* Dashboard */
+  .tele-grid{grid-template-columns:repeat(2,1fr)}
+  .ctrl-row{grid-template-columns:1fr}
+  .ctrl-card{padding:10px}
+
+  /* Mission planner: panel stacks above map */
+  #tab-planner{flex-direction:column;overflow-y:auto}
+  .pp{width:100%;max-height:none;border-right:none;border-bottom:1px solid var(--border);overflow:visible}
+  .wpscroll{max-height:180px}
+  .wped{max-height:none}
+  .mapwrap{height:360px;flex:none}
+  .pfooter{flex-wrap:wrap}
+  .pfooter .btn{flex:1 0 calc(50% - 8px)}
+
+  /* Missions library: horizontal scroll */
+  .libwrap{overflow-x:auto}
+  table{min-width:520px}
+}
+
+/* Small phone (≤ 480px) */
+@media(max-width:480px){
+  .tele-grid{grid-template-columns:1fr}
+  .dpad,.ptupad{grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px)}
+  .dpad button,.ptupad button{font-size:22px}
+  .abtn .btn{min-height:44px}
+  .mapcoords{display:none}
+  #tab-dashboard{padding:8px;gap:8px}
+}
 </style>
 </head>
 <body>
@@ -154,9 +204,9 @@ tbody td{padding:9px 10px;font-size:12px}
   <div class="logo">⚙ TANK C2</div>
   <div class="conn-badge" id="cb"><span class="conn-dot"></span><span id="ct">OFFLINE</span></div>
   <div class="tabs">
-    <button class="tab-btn active" onclick="go('dashboard')">DASHBOARD</button>
-    <button class="tab-btn" onclick="go('planner')">MISSION PLANNER</button>
-    <button class="tab-btn" onclick="go('missions')">MISSIONS</button>
+    <button class="tab-btn active" data-tab="dashboard" onclick="go('dashboard')"><span class="full">DASHBOARD</span><span class="short">DASH</span></button>
+    <button class="tab-btn" data-tab="planner"   onclick="go('planner')"><span class="full">MISSION PLANNER</span><span class="short">PLAN</span></button>
+    <button class="tab-btn" data-tab="missions"  onclick="go('missions')"><span class="full">MISSIONS</span><span class="short">MSNS</span></button>
   </div>
 </header>
 
@@ -502,12 +552,11 @@ document.addEventListener('keyup',e=>{
 });
 
 // ── Tab ────────────────────────────────────────────────────────────────────
-const TLABELS={dashboard:'DASHBOARD',planner:'MISSION PLANNER',missions:'MISSIONS'};
 function go(name){
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.textContent.trim()===TLABELS[name])b.classList.add('active')});
+  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.dataset.tab===name)b.classList.add('active')});
   if(name==='missions')loadLib();
   if(name==='planner')setTimeout(()=>map?.invalidateSize(),120);
 }
