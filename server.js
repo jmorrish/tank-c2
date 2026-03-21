@@ -185,6 +185,19 @@ app.get('/api/missions', (_req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Return the last saved mission state from the Jetson's status (if available).
+// MUST be registered before /:id so Express doesn't match 'state' as an id.
+app.get('/api/missions/state', (_req, res) => {
+    if (lastStatus && lastStatus.mission && lastStatus.mission.id) {
+        res.json({
+            mission_id:   lastStatus.mission.id,
+            waypoint_idx: lastStatus.mission.waypoint_idx ?? 0
+        });
+    } else {
+        res.json({});
+    }
+});
+
 app.get('/api/missions/:id', (req, res) => {
     const fp = missionFile(req.params.id);
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
@@ -235,18 +248,6 @@ app.post('/api/missions/:id/execute', (req, res) => {
     const ok = sendToJetson(`mission_start:${JSON.stringify(mission)}`);
     broadcast({ type: 'mission_status', event: 'executing', missionId: mission.id, name: mission.name });
     res.json({ ok });
-});
-
-// Return the last saved mission state from the Jetson's status (if available)
-app.get('/api/missions/state', (_req, res) => {
-    if (lastStatus && lastStatus.mission && lastStatus.mission.id) {
-        res.json({
-            mission_id:   lastStatus.mission.id,
-            waypoint_idx: lastStatus.mission.waypoint_idx ?? 0
-        });
-    } else {
-        res.json({});
-    }
 });
 
 app.post('/api/missions/abort', (_req, res) => {

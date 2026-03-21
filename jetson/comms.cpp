@@ -522,23 +522,23 @@ std::string Comms::getStatusJson() const {
 
     constexpr double STALE_THRESHOLD_MS = 2000.0;
 
-    float yaw, pitch, roll; double iage;
+    float yaw = 0.0f, pitch = 0.0f, roll = 0.0f; double iage = 99999.0;
     getLatestYPR(yaw, pitch, roll, iage);
     j["imu"] = {{"yaw", yaw}, {"pitch", pitch}, {"roll", roll}, {"age_ms", iage},
                 {"stale", iage > STALE_THRESHOLD_MS}};
 
-    double lat, lon, gage; float alt, speed, course; int qual, sats;
+    double lat = 0.0, lon = 0.0, gage = 99999.0; float alt = 0.0f, speed = 0.0f, course = 0.0f; int qual = 0, sats = 0;
     getLatestGPS(lat, lon, alt, speed, course, qual, sats, gage);
     j["gps"] = {{"lat", lat}, {"lon", lon}, {"alt", alt}, {"speed_knots", speed},
                 {"course_deg", course}, {"quality", qual}, {"sats", sats}, {"age_ms", gage},
                 {"stale", gage > STALE_THRESHOLD_MS}};
 
-    int left, right; double eage;
+    int left = 0, right = 0; double eage = 99999.0;
     getLatestEncoders(left, right, eage);
     j["encoders"] = {{"left", left}, {"right", right}, {"age_ms", eage},
                      {"stale", eage > STALE_THRESHOLD_MS}};
 
-    double dage;
+    double dage = 99999.0;
     j["distance_m"]     = getLatestDistance(&dage);
     j["distance_age_ms"] = dage;
     j["detection_fps"]  = detection_fps_.load();
