@@ -37,8 +37,9 @@ find_package(Boost REQUIRED COMPONENTS filesystem)
 message(STATUS "Boost Libs: ${Boost_LIBRARIES}")
 message(STATUS "Boost Headers: ${Boost_INCLUDE_DIRS}")
 
-# NEW: ZeroMQ (for frame publishing)
-find_package(ZeroMQ REQUIRED)
+# --- ZeroMQ (for frame publishing) --- use pkg-config since no CMake config is installed
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZeroMQ REQUIRED libzmq)
 message(STATUS "ZeroMQ Libs: ${ZeroMQ_LIBRARIES}")
 message(STATUS "ZeroMQ Headers: ${ZeroMQ_INCLUDE_DIRS}")
 
