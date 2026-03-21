@@ -294,8 +294,8 @@ void Comms::sensorRxLoop(Comms* self){
                         self->tof_dist_.store(d);
                         self->tof_stamp_ns_.store(now_ns());
                     }
-                } else if (line.rfind("$GPGGA", 0) == 0){
-                    // Parse GGA
+                } else if (line.rfind("$GPGGA", 0) == 0 || line.rfind("$GNGGA", 0) == 0){
+                    // Parse GGA — accept both $GPGGA (GPS-only) and $GNGGA (multi-constellation)
                     size_t star_pos = line.find('*');
                     if (star_pos == std::string::npos) continue;
                     std::string sentence = line.substr(0, star_pos);
@@ -305,7 +305,7 @@ void Comms::sensorRxLoop(Comms* self){
                     while (std::getline(ss, token, ',')) {
                         fields.push_back(token);
                     }
-                    if (fields.size() != 15 || fields[0] != "$GPGGA") continue;
+                    if (fields.size() != 15 || (fields[0] != "$GPGGA" && fields[0] != "$GNGGA")) continue;
 
                     std::string lat_str = fields[2];
                     std::string ns = fields[3];
@@ -352,8 +352,8 @@ void Comms::sensorRxLoop(Comms* self){
                         self->gps_.valid   = (quality > 0);
                     }
                     self->gps_stamp_ns_.store(now_ns());
-                } else if (line.rfind("$GPRMC", 0) == 0){
-                    // Parse RMC (assuming RVC is a typo for RMC)
+                } else if (line.rfind("$GPRMC", 0) == 0 || line.rfind("$GNRMC", 0) == 0){
+                    // Parse RMC — accept both $GPRMC (GPS-only) and $GNRMC (multi-constellation)
                     size_t star_pos = line.find('*');
                     if (star_pos == std::string::npos) continue;
                     std::string sentence = line.substr(0, star_pos);
@@ -363,7 +363,7 @@ void Comms::sensorRxLoop(Comms* self){
                     while (std::getline(ss, token, ',')) {
                         fields.push_back(token);
                     }
-                    if (fields.size() != 13 || fields[0] != "$GPRMC") continue;
+                    if (fields.size() != 13 || (fields[0] != "$GPRMC" && fields[0] != "$GNRMC")) continue;
 
                     std::string status = fields[2];
                     if (status != "A") continue;
