@@ -24,12 +24,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 // The MJPEG bridge runs on the Jetson at port 8080; this proxies it through
 // so browsers hitting the VPS at /stream get the live camera feed.
 app.get('/stream', (req, res) => {
-    const upstream = http.get(`http://${JETSON_HOST}:${MJPEG_PORT}/stream`, (upRes) => {
-        res.writeHead(upRes.statusCode, upRes.headers);
-        upRes.pipe(res);
-        req.on('close', () => upRes.destroy());
-    });
-    upstream.on('error', () => { if (!res.headersSent) res.status(503).end(); });
+    const upstream = http.get(
+        `http://${JETSON_HOST}:${MJPEG_PORT}/stream`,
+        { timeout: 4000 },   // fail fast when Jetson is unreachable (Tailscale drops packets silently)
+        (upRes) => {
+            res.writeHead(upRes.statusCode, upRes.headers);
+            upRes.pipe(res);
+            req.on('close', () => upRes.destroy());
+        }
+    );
+    upstream.on('timeout', () => upstream.destroy());  // destroy triggers 'error' below
+    upstream.on('error',   () => { if (!res.headersSent) res.status(503).end(); });
 });
 
 // ── Jetson TCP bridge ─────────────────────────────────────────────────────────
