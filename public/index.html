@@ -93,7 +93,8 @@ input[type=range]{flex:1;accent-color:var(--accent)}
 .tg-card:hover{border-color:var(--blue)}
 .tg-card.active-target{border-color:var(--accent);box-shadow:0 0 8px rgba(0,230,118,.25)}
 .tg-thumb{width:74px;height:100px;object-fit:cover;border-radius:3px;background:#111}
-.tg-label{font-size:10px;letter-spacing:1px;color:var(--muted);text-align:center}
+.tg-label{font-size:10px;letter-spacing:1px;color:var(--muted);text-align:center;cursor:text;padding:1px 3px;border-radius:3px;border:1px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:74px}
+.tg-label:hover{border-color:var(--border);color:var(--text)}
 .tg-card.active-target .tg-label{color:var(--accent)}
 .tg-follow{padding:3px 8px;font-size:9px;letter-spacing:1px;border-radius:3px;border:1px solid var(--blue);background:rgba(0,176,255,.1);color:var(--blue);cursor:pointer;font-family:inherit;transition:all .15s;width:100%}
 .tg-follow:hover,.tg-card.active-target .tg-follow{background:var(--blue);color:var(--bg)}
@@ -580,19 +581,53 @@ function loadTargets(){
     const empty = document.getElementById('tgEmpty');
     if(!list.length){ empty.style.display=''; return; }
     empty.style.display='none';
-    // Add cards for any IDs not already in the grid
     const existing = new Set([...grid.querySelectorAll('.tg-card')].map(c=>+c.dataset.pid));
     list.forEach(t=>{
-      if(existing.has(t.id)) return;
+      if(existing.has(t.id)){
+        // Update label if name changed
+        const lbl = grid.querySelector(`.tg-card[data-pid="${t.id}"] .tg-label`);
+        if(lbl && !lbl.isContentEditable) lbl.textContent = t.name;
+        return;
+      }
       const card = document.createElement('div');
       card.className='tg-card'; card.dataset.pid=t.id;
       card.innerHTML=`<img class="tg-thumb" src="/api/targets/${t.id}/thumb?t=${Date.now()}" alt="P${t.id}" loading="lazy">
-<span class="tg-label">PERSON ${t.id}</span>
+<span class="tg-label" title="Click to rename">${t.name}</span>
 <button class="tg-follow" onclick="followTarget(${t.id})">FOLLOW</button>`;
+      // Inline rename on label click
+      const lbl = card.querySelector('.tg-label');
+      lbl.addEventListener('click', () => startRename(lbl, t.id));
       grid.appendChild(card);
     });
     highlightTarget(_activeTargetId);
   }).catch(()=>{});
+}
+
+function startRename(lbl, id){
+  const prev = lbl.textContent;
+  lbl.contentEditable = 'true';
+  lbl.focus();
+  // Select all text
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(lbl);
+  sel.removeAllRanges(); sel.addRange(range);
+
+  const commit = () => {
+    lbl.contentEditable = 'false';
+    const name = lbl.textContent.trim().slice(0, 64) || prev;
+    lbl.textContent = name;
+    fetch(`/api/targets/${id}/name`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name})
+    }).catch(()=>{});
+  };
+  lbl.addEventListener('blur', commit, {once:true});
+  lbl.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); lbl.blur(); }
+    if(e.key === 'Escape'){ lbl.textContent = prev; lbl.contentEditable='false'; }
+  }, {once:true});
 }
 
 function followTarget(id){

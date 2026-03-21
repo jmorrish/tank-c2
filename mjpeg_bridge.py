@@ -98,7 +98,14 @@ class Handler(BaseHTTPRequestHandler):
                 for name in sorted(os.listdir(TARGETS_DIR)):
                     d = os.path.join(TARGETS_DIR, name)
                     if os.path.isdir(d) and name.isdigit():
-                        entries.append({"id": int(name),
+                        label = f"Person {name}"
+                        nf = os.path.join(d, 'name.txt')
+                        if os.path.isfile(nf):
+                            try:
+                                label = open(nf).read().strip() or label
+                            except Exception:
+                                pass
+                        entries.append({"id": int(name), "name": label,
                                         "thumb_url": f"/targets/{name}/thumb"})
             body = json.dumps(entries).encode()
             self.send_response(200)
@@ -167,6 +174,31 @@ class Handler(BaseHTTPRequestHandler):
             pass   # client disconnected — normal
         except Exception:
             pass
+
+    def do_POST(self):
+        # ── POST /targets/<id>/name  body: {"name":"..."} ─────────────────────
+        parts = self.path.rstrip('/').split('/')
+        if (len(parts) == 4 and parts[1] == 'targets' and
+                parts[3] == 'name' and parts[2].isdigit()):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length)
+            try:
+                data = json.loads(body)
+                label = str(data.get('name', '')).strip()[:64]
+                d = os.path.join(TARGETS_DIR, parts[2])
+                if os.path.isdir(d) and label:
+                    with open(os.path.join(d, 'name.txt'), 'w') as f:
+                        f.write(label)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"ok": True}).encode())
+                    return
+            except Exception:
+                pass
+        self.send_response(400)
+        self.end_headers()
 
     def log_message(self, fmt, *args):
         pass   # suppress per-request access logs

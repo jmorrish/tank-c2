@@ -123,6 +123,22 @@ app.get('/api/targets/:id/thumb', (req, res) => {
     }).on('error', () => res.status(404).end());
 });
 
+app.put('/api/targets/:id/name', (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id) || id < 1) return res.status(400).end();
+    const body = JSON.stringify(req.body);
+    const options = {
+        hostname: JETSON_HOST, port: MJPEG_PORT,
+        path: `/targets/${id}/name`, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 3000,
+    };
+    const proxy = http.request(options, (upstream) => { upstream.pipe(res); });
+    proxy.on('error', () => res.status(503).json({ ok: false }));
+    proxy.write(body);
+    proxy.end();
+});
+
 // Single JPEG snapshot for Safari/iOS (polled by JS at ~10 fps)
 app.get('/snapshot', (req, res) => {
     if (!latestFrame) return res.status(503).end();
