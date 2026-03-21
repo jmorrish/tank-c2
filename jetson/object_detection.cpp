@@ -271,8 +271,19 @@ void ObjectDetection::mainLoop(){
 
         // Publish frame via ZMQ (non-blocking); rebind socket on failure
         if (zmq_ready_) {
+            // Scale down to max 1280px wide before encoding to reduce bandwidth.
+            // Detection runs at full resolution; only the streamed copy is resized.
+            constexpr int STREAM_MAX_W = 1280;
+            cv::Mat stream_frame;
+            if (combined.cols > STREAM_MAX_W) {
+                float scale = float(STREAM_MAX_W) / combined.cols;
+                cv::resize(combined, stream_frame, cv::Size(), scale, scale, cv::INTER_LINEAR);
+            } else {
+                stream_frame = combined;
+            }
             std::vector<uchar> buf;
-            cv::imencode(".jpg", combined, buf);
+            std::vector<int> enc_params = {cv::IMWRITE_JPEG_QUALITY, 55};
+            cv::imencode(".jpg", stream_frame, buf, enc_params);
             zmq::message_t zmqmsg(buf.size());
             memcpy(zmqmsg.data(), buf.data(), buf.size());
             try {
