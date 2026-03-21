@@ -121,17 +121,23 @@ void ObjectDetection::mainLoop(){
     cv::VideoCapture cap;
     constexpr int CAM_RETRY_SEC = 3;
 
-    // Initial open with retry so a slow-to-init camera doesn't abort permanently
-    while (run_.load() && !cap.isOpened()){
-        cap.open(cam1_index_);
-        if (!cap.isOpened()){
-            LOGW("cam1: cannot open index " << cam1_index_ << " — retrying in " << CAM_RETRY_SEC << "s");
+    // Helper: blocks until camera opens or run_ is cleared (handles hot-plug)
+    auto openCam = [&]() -> bool {
+        while (run_.load()){
+            cap.release();
+            cap.open(cam1_index_);
+            if (cap.isOpened()){
+                LOGI("cam1: opened index " << cam1_index_);
+                return true;
+            }
+            LOGW("cam1: not available (index " << cam1_index_ << ") — retrying in " << CAM_RETRY_SEC << "s");
             for (int i = 0; i < CAM_RETRY_SEC * 10 && run_.load(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-    }
-    if (!run_.load()) return;
-    LOGI("cam1: opened index " << cam1_index_);
+        return false;
+    };
+
+    if (!openCam()) return;   // stopped before camera ever appeared
 
     if (!headless_){
         cv::namedWindow(window_, cv::WINDOW_NORMAL);
@@ -142,22 +148,22 @@ void ObjectDetection::mainLoop(){
     int frame_count = 0;
     auto fps_t0 = std::chrono::steady_clock::now();
     int emptyCount = 0;
-    constexpr int MAX_EMPTY = 30;  // consecutive empty frames before reopen
+    constexpr int MAX_EMPTY = 30;  // consecutive empty frames before treating as unplugged
 
     while (run_.load()){
         cv::Mat frame;
         cap >> frame;
         if (frame.empty()){
             ++emptyCount;
-            LOGW("cam1: empty frame (" << emptyCount << "/" << MAX_EMPTY << ")");
             if (emptyCount >= MAX_EMPTY){
-                LOGW("cam1: reopening...");
-                cap.release();
+                LOGW("cam1: camera lost (unplugged?) — waiting for reconnect...");
+                // Clear the target so the robot stops following while camera is gone
+                TargetMsg empty{}; empty.valid = false;
+                bus_.set(empty);
+                if (comms_) comms_->setDetectionFPS(0.0f);
+                // Block here until camera comes back (hot-plug)
+                if (!openCam()) return;
                 emptyCount = 0;
-                for (int i = 0; i < CAM_RETRY_SEC * 10 && run_.load(); ++i)
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                cap.open(cam1_index_);
-                if (cap.isOpened()) LOGI("cam1: reopened successfully");
             }
             continue;
         }

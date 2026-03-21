@@ -69,49 +69,35 @@ int main(int argc, char** argv){
         else if (a == "--sensor-port"&& i+1 < argc) sensor_port = std::stoi(argv[++i]);
     }
 
-    // Comms — hardware connections are non-fatal so the web IPC still starts
+    // Comms — hardware connections are non-fatal; rx threads reconnect automatically
     Comms comms;
     if (!no_hw){
         if (!comms.connectControl(ip, port))
-            LOGW("Control Teensy not reachable — continuing without it");
+            LOGW("Control Teensy not reachable — will keep retrying in background");
         if (!comms.connectSensor(sensor_ip, sensor_port))
-            LOGW("Sensor Teensy not reachable — continuing without it");
+            LOGW("Sensor Teensy not reachable — will keep retrying in background");
     } else {
         LOGI("--no-hw: skipping hardware connections");
     }
 
-    // Start web IPC (always — this is what the website talks to)
+    // Web IPC is always started — this is what the website talks to
     if (!comms.startWebIPC(9999)){
         LOGE("Failed to start Web IPC — cannot continue");
         return 1;
     }
 
-    // If no-hw or no camera available, run in web-only mode (no vision/movement)
-    auto cams = no_hw ? std::vector<int>{} : enumerateCams();
-    bool vision_enabled = !cams.empty() && !no_hw;
-
-    if (!vision_enabled){
-        LOGI("Running in web-only mode (no camera/vision). Web IPC active on port 9999.");
-        LOGI("Press Ctrl+C to exit.");
-        while (true)
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        comms.stopWebIPC();
-        return 0;
-    }
-
-    int cam1 = -1;
-    if (auto_continue || headless){
-        cam1 = cams[0];
-        LOGI("Auto-selected camera " << cam1);
-    } else {
-        std::cout << "Available cameras: ";
-        for (int c : cams) std::cout << c << " ";
-        std::cout << "\nEnter device index for Camera 1: ";
-        std::cin >> cam1;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        if (std::find(cams.begin(), cams.end(), cam1) == cams.end()){
-            LOGE("Invalid camera index");
-            return 1;
+    // Camera index: default 0, override with --cam <n>
+    // ObjectDetection's internal loop waits for the camera to appear, so it's
+    // safe to start even when nothing is plugged in yet.
+    int cam1 = 0;
+    if (!auto_continue && !headless && !no_hw){
+        auto cams = enumerateCams();
+        if (!cams.empty()){
+            std::cout << "Available cameras: ";
+            for (int c : cams) std::cout << c << " ";
+            std::cout << "\nEnter device index for Camera 1: ";
+            std::cin >> cam1;
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     }
 
@@ -135,8 +121,13 @@ int main(int argc, char** argv){
         return 1;
     }
 
-    while (det.isRunning())
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    LOGI("All subsystems running. Press Ctrl+C to exit.");
+
+    // Run forever — subsystems manage their own reconnect loops.
+    // ObjectDetection, Movement, and Comms rx threads all handle
+    // hardware disconnect/reconnect internally.
+    while (true)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     mov.stop();
     det.stop();
