@@ -5,9 +5,10 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 
-const JETSON_HOST = process.env.JETSON_HOST || '100.91.47.30';
-const JETSON_PORT = parseInt(process.env.JETSON_PORT || '9999');
-const WEB_PORT    = parseInt(process.env.PORT || '3000');
+const JETSON_HOST  = process.env.JETSON_HOST  || '100.91.47.30';
+const JETSON_PORT  = parseInt(process.env.JETSON_PORT  || '9999');
+const MJPEG_PORT   = parseInt(process.env.MJPEG_PORT   || '8080');
+const WEB_PORT     = parseInt(process.env.PORT         || '3000');
 const MISSIONS_DIR = path.join(__dirname, 'missions');
 
 if (!fs.existsSync(MISSIONS_DIR)) fs.mkdirSync(MISSIONS_DIR, { recursive: true });
@@ -18,6 +19,18 @@ const wss    = new WebSocketServer({ server });
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── MJPEG stream proxy (Jetson mjpeg_bridge.py → browser) ────────────────────
+// The MJPEG bridge runs on the Jetson at port 8080; this proxies it through
+// so browsers hitting the VPS at /stream get the live camera feed.
+app.get('/stream', (req, res) => {
+    const upstream = http.get(`http://${JETSON_HOST}:${MJPEG_PORT}/stream`, (upRes) => {
+        res.writeHead(upRes.statusCode, upRes.headers);
+        upRes.pipe(res);
+        req.on('close', () => upRes.destroy());
+    });
+    upstream.on('error', () => { if (!res.headersSent) res.status(503).end(); });
+});
 
 // ── Jetson TCP bridge ─────────────────────────────────────────────────────────
 let jetsonSocket    = null;
