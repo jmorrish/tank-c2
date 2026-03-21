@@ -1,6 +1,7 @@
 #include "comms.h"
 #include "helpers.h"
 #include "config.h"
+#include "object_detection.h"
 
 #include <nlohmann/json.hpp>
 
@@ -563,8 +564,9 @@ std::string Comms::getStatusJson() const {
     double dage = 99999.0;
     j["distance_m"]     = getLatestDistance(&dage);
     j["distance_age_ms"] = dage;
-    j["detection_fps"]   = detection_fps_.load();
-    j["stream_quality"]  = stream_quality_.load();
+    j["detection_fps"]    = detection_fps_.load();
+    j["stream_quality"]   = stream_quality_.load();
+    j["target_person_id"] = target_person_id_.load();
 
     // Control mode
     static const char* modeNames[] = {"follow", "manual", "mission", "stopped"};
@@ -757,6 +759,16 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         setMode(ControlMode::MISSION);
         mission_thread_ = std::thread(&Comms::missionLoop, this);
         LOGI("Mission resumed at WP " << saved_idx << ": " << id);
+        return "";
+    }
+
+    // ── Set follow target by gallery person ID: set_target:<id> ──────────────
+    if (cmd.rfind("set_target:", 0) == 0) {
+        try {
+            int pid = std::stoi(cmd.substr(11));
+            if (od_ptr_) od_ptr_->setTargetPerson(pid);
+            LOGI("set_target: person " << pid);
+        } catch (...) {}
         return "";
     }
 

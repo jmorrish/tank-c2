@@ -48,5 +48,8 @@ static const std::string BOTSORT_REID_CFG    = BOTSORT_BASE + "/config/reid.ini"
 // --------- Missions ---------
 static const std::string MISSIONS_DIR = "/home/james/tank_missions";
 
+// --------- Target gallery ---------
+static const std::string TARGETS_DIR  = "/home/james/tank_targets";
+
 // --------- UI ---------
 static constexpr bool DEFAULT_HEADLESS = false;

@@ -8,6 +8,8 @@
 #include <limits>
 #include "helpers.h"  // For GPSData and EncoderData
 
+class ObjectDetection;  // fwd
+
 enum class ControlMode : int {
     FOLLOW  = 0,  // autonomous person-follow (default)
     MANUAL  = 1,  // web-driven manual control
@@ -52,8 +54,12 @@ public:
 
     float getLatestDistance(double* age_ms=nullptr) const; // meters (or <0 if invalid/none)
 
-    void  setDetectionFPS(float fps)  { detection_fps_.store(fps); }
-    int   getStreamQuality() const    { return stream_quality_.load(); }
+    void  setDetectionFPS(float fps)   { detection_fps_.store(fps); }
+    int   getStreamQuality() const     { return stream_quality_.load(); }
+    void  setTargetPersonId(int id)    { target_person_id_.store(id); }
+
+    // Wire ObjectDetection so set_target: commands can be forwarded
+    void  setObjectDetection(ObjectDetection* od) { od_ptr_ = od; }
 
     // Control mode
     ControlMode getMode() const { return static_cast<ControlMode>(mode_.load()); }
@@ -110,6 +116,12 @@ private:
 
     // Stream quality 1-100 (JPEG quality sent to web, tunable at runtime)
     std::atomic<int> stream_quality_{55};
+
+    // Active follow target person ID (set by ObjectDetection each frame)
+    std::atomic<int> target_person_id_{-1};
+
+    // ObjectDetection pointer for set_target: command dispatch
+    ObjectDetection* od_ptr_ = nullptr;
 
     // Control mode
     std::atomic<int> mode_{0};   // ControlMode::FOLLOW by default

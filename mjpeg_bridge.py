@@ -17,6 +17,8 @@ import time
 import threading
 import socket
 import logging
+import os
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -24,6 +26,7 @@ log = logging.getLogger('mjpeg')
 
 ZMQ_ADDR       = "tcp://127.0.0.1:5555"
 HTTP_PORT      = 8080
+TARGETS_DIR    = "/home/james/tank_targets"
 TARGET_FPS     = 25
 STALE_TIMEOUT  = 5.0   # seconds without a frame before we consider ZMQ dead
 
@@ -88,6 +91,44 @@ threading.Thread(target=zmq_receiver, daemon=True, name="zmq-recv").start()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # ── GET /targets → JSON list of known persons ─────────────────────────
+        if self.path in ('/targets', '/targets/'):
+            entries = []
+            if os.path.isdir(TARGETS_DIR):
+                for name in sorted(os.listdir(TARGETS_DIR)):
+                    d = os.path.join(TARGETS_DIR, name)
+                    if os.path.isdir(d) and name.isdigit():
+                        entries.append({"id": int(name),
+                                        "thumb_url": f"/targets/{name}/thumb"})
+            body = json.dumps(entries).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # ── GET /targets/<id>/thumb → JPEG thumbnail ──────────────────────────
+        parts = self.path.rstrip('/').split('/')
+        if (len(parts) == 4 and parts[1] == 'targets' and
+                parts[3] == 'thumb' and parts[2].isdigit()):
+            thumb = os.path.join(TARGETS_DIR, parts[2], 'thumb.jpg')
+            if os.path.isfile(thumb):
+                with open(thumb, 'rb') as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/jpeg')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
         if self.path not in ('/stream', '/stream/'):
             self.send_response(404)
             self.end_headers()

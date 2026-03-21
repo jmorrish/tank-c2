@@ -108,6 +108,7 @@ int main(int argc, char** argv){
     AtomicLatest<TargetMsg> bus;
 
     ObjectDetection det(engine_path, cam1, CAM2_RTSP, headless, bus, &comms, cfg);
+    comms.setObjectDetection(&det);  // wire set_target: command dispatch
     if (!det.start()){
         LOGE("Failed to start ObjectDetection");
         comms.stopWebIPC();

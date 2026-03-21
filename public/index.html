@@ -87,6 +87,19 @@ input[type=range]{flex:1;accent-color:var(--accent)}
 .abtn{display:flex;flex-direction:column;gap:8px}.abtn .btn{width:100%}
 .kbhint{font-size:10px;color:var(--muted);line-height:1.6;margin-top:8px}
 
+/* ── TARGET GALLERY ── */
+.tg-grid{display:flex;flex-wrap:wrap;gap:10px;min-height:20px}
+.tg-card{background:#0d1117;border:1px solid var(--border);border-radius:var(--r);padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;width:90px;cursor:pointer;transition:border-color .2s}
+.tg-card:hover{border-color:var(--blue)}
+.tg-card.active-target{border-color:var(--accent);box-shadow:0 0 8px rgba(0,230,118,.25)}
+.tg-thumb{width:74px;height:100px;object-fit:cover;border-radius:3px;background:#111}
+.tg-label{font-size:10px;letter-spacing:1px;color:var(--muted);text-align:center}
+.tg-card.active-target .tg-label{color:var(--accent)}
+.tg-follow{padding:3px 8px;font-size:9px;letter-spacing:1px;border-radius:3px;border:1px solid var(--blue);background:rgba(0,176,255,.1);color:var(--blue);cursor:pointer;font-family:inherit;transition:all .15s;width:100%}
+.tg-follow:hover,.tg-card.active-target .tg-follow{background:var(--blue);color:var(--bg)}
+.tg-card.active-target .tg-follow{border-color:var(--accent);background:rgba(0,230,118,.15);color:var(--accent)}
+.tg-card.active-target .tg-follow:hover{background:var(--accent);color:var(--bg)}
+
 /* ── MISSION PLANNER ── */
 #tab-planner{flex-direction:row}
 .pp{width:310px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -334,7 +347,7 @@ button,a,[role=button]{touch-action:manipulation}
       onload="streamOk()">
 
     <!-- Offline placeholder (shown when stream unavailable) -->
-    <div id="streamPlaceholder" style="display:none;width:100%;height:240px;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:repeating-linear-gradient(45deg,#0a0e1a 0px,#0a0e1a 10px,#0d1220 10px,#0d1220 20px)">
+    <div id="streamPlaceholder" style="display:none;width:100%;height:240px;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:repeating-linear-gradient(45deg,#0a0e1a 0px,#0a0e1a 10px,#0d1220 10px,#0d1220 20px)" aria-hidden="true">
       <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
         <!-- Camera body -->
         <rect x="8" y="22" width="52" height="36" rx="4" stroke="#1f2937" stroke-width="2.5" fill="#111827"/>
@@ -351,6 +364,14 @@ button,a,[role=button]{touch-action:manipulation}
         <div style="font-size:12px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>
         <div style="font-size:10px;color:var(--muted);margin-top:4px">CAMERA FEED UNAVAILABLE</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Target gallery -->
+  <div class="card" style="flex-shrink:0">
+    <div class="card-title">▸ KNOWN TARGETS</div>
+    <div id="tgGrid" class="tg-grid">
+      <div id="tgEmpty" style="color:var(--muted);font-size:11px;padding:4px 0">No targets identified yet</div>
     </div>
   </div>
 </div>
@@ -488,6 +509,8 @@ function handle(m){
     document.getElementById('ct').textContent=on?'ONLINE':'OFFLINE';
   } else if(m.type==='status'){
     updateTele(m.data);
+  } else if(m.type==='new_target'){
+    loadTargets();
   } else if(m.type==='mission_status'){
     if(m.event==='executing') showBanner(m.name,'ok');
     else if(m.event==='completed'){
@@ -525,6 +548,7 @@ function updateTele(d){
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'));setStale('dV',d.distance_age_ms>2000)}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
   if(d.stream_quality!=null&&!sqDebounce){const sl=document.getElementById('sqSlider');if(sl){sl.value=d.stream_quality;document.getElementById('sqVal').textContent=d.stream_quality;}}
+  if(d.target_person_id!=null) highlightTarget(d.target_person_id);
   // Mode + mission progress from Jetson telemetry
   if(d.mission&&d.mission.running){
     const idx=(d.mission.waypoint_idx??0)+1, tot=d.mission.waypoint_count||'?';
@@ -546,6 +570,44 @@ function updateTele(d){
     }
   }
 }
+
+// ── Target gallery ─────────────────────────────────────────────────────────
+let _activeTargetId = -1;
+
+function loadTargets(){
+  fetch('/api/targets').then(r=>r.ok?r.json():[]).then(list=>{
+    const grid = document.getElementById('tgGrid');
+    const empty = document.getElementById('tgEmpty');
+    if(!list.length){ empty.style.display=''; return; }
+    empty.style.display='none';
+    // Add cards for any IDs not already in the grid
+    const existing = new Set([...grid.querySelectorAll('.tg-card')].map(c=>+c.dataset.pid));
+    list.forEach(t=>{
+      if(existing.has(t.id)) return;
+      const card = document.createElement('div');
+      card.className='tg-card'; card.dataset.pid=t.id;
+      card.innerHTML=`<img class="tg-thumb" src="/api/targets/${t.id}/thumb?t=${Date.now()}" alt="P${t.id}" loading="lazy">
+<span class="tg-label">PERSON ${t.id}</span>
+<button class="tg-follow" onclick="followTarget(${t.id})">FOLLOW</button>`;
+      grid.appendChild(card);
+    });
+    highlightTarget(_activeTargetId);
+  }).catch(()=>{});
+}
+
+function followTarget(id){
+  sendCmd('set_target:'+id);
+}
+
+function highlightTarget(id){
+  _activeTargetId = id;
+  document.querySelectorAll('.tg-card').forEach(c=>{
+    c.classList.toggle('active-target', +c.dataset.pid === id);
+  });
+}
+
+// Load gallery on page load (Jetson may already have known targets)
+loadTargets();
 
 // ── Controls ───────────────────────────────────────────────────────────────
 const WM=1000,PM=500;

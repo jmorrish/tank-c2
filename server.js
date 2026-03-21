@@ -105,6 +105,24 @@ app.get('/stream', (req, res) => {
     req.on('close', () => streamClients.delete(res));
 });
 
+// ── Target gallery proxies → Jetson :8080 ────────────────────────────────────
+app.get('/api/targets', (_req, res) => {
+    http.get(`http://${JETSON_HOST}:${MJPEG_PORT}/targets`, { timeout: 3000 }, (upstream) => {
+        res.setHeader('Content-Type', 'application/json');
+        upstream.pipe(res);
+    }).on('error', () => res.status(503).json([]));
+});
+
+app.get('/api/targets/:id/thumb', (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id) || id < 1) return res.status(400).end();
+    http.get(`http://${JETSON_HOST}:${MJPEG_PORT}/targets/${id}/thumb`,
+        { timeout: 3000 }, (upstream) => {
+        res.setHeader('Content-Type', 'image/jpeg');
+        upstream.pipe(res);
+    }).on('error', () => res.status(404).end());
+});
+
 // Single JPEG snapshot for Safari/iOS (polled by JS at ~10 fps)
 app.get('/snapshot', (req, res) => {
     if (!latestFrame) return res.status(503).end();
@@ -193,6 +211,11 @@ function connectJetson() {
                     console.log(`[jetson] event: ${parsed.event} id=${parsed.id || ''} fault=${parsed.fault || ''}`);
                     broadcast({ type: 'mission_status', event: parsed.event,
                                 missionId: parsed.id, name: parsed.name, fault: parsed.fault });
+                    // new_target events also get a dedicated broadcast so the web UI
+                    // can refresh the target gallery without filtering mission_status
+                    if (parsed.event === 'new_target') {
+                        broadcast({ type: 'new_target', target_id: parsed.target_id });
+                    }
                 } else {
                     lastStatus = parsed;
                     broadcast({ type: 'status', data: lastStatus });

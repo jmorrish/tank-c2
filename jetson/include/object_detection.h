@@ -1,12 +1,23 @@
 #pragma once
 #include <atomic>
+#include <map>
 #include <thread>
+#include <mutex>
+#include <vector>
+#include <string>
 #include <opencv2/opencv.hpp>
 #include "helpers.h"
 #include "runtime_config.h"
 #include <zmq.hpp>
 
 class Comms; // fwd
+
+// One entry in the persistent person gallery.
+// Embedding stored as plain floats to avoid pulling Eigen into this header.
+struct PersonRecord {
+    int id = -1;
+    std::vector<float> embedding;   // normalised 512-dim EMA feature
+};
 
 class ObjectDetection {
 public:
@@ -23,9 +34,19 @@ public:
     void stop();
     bool isRunning() const { return run_.load(); }
 
+    // Called from Comms thread to request a target switch (thread-safe).
+    void setTargetPerson(int person_id) { pending_target_person_.store(person_id); }
+
 private:
     void rtspThreadFunc();
     void mainLoop();
+
+    // Gallery helpers
+    void loadGallery();
+    void saveEmbedding(const PersonRecord& p) const;
+    void saveThumbnail(int person_id, const cv::Mat& crop) const;
+    int  matchOrCreate(const std::vector<float>& feat);  // returns person_id
+    static float cosineSim(const std::vector<float>& a, const std::vector<float>& b);
 
     std::string engine_path_;
     int cam1_index_;
@@ -51,12 +72,22 @@ private:
     int first_frame_width_ = 0;
     std::atomic<bool> secondCamFocusRequested_{false};
 
-    // Tracking persistence: remember the last chosen track ID so we
-    // re-acquire the same person rather than snapping to a new entrant
+    // BoTSORT session track ID of the currently-followed person
     int tracked_id_ = -1;
 
     // NEW: ZMQ for publishing frames to Python
     zmq::context_t zmq_ctx_{1};
     zmq::socket_t zmq_pub_{zmq_ctx_, ZMQ_PUB};
     bool zmq_ready_ = false;
+
+    // ── Cross-session target gallery ──────────────────────────────────────────
+    static constexpr float GALLERY_MATCH_THRESH  = 0.75f;
+    static constexpr int   THUMB_UPDATE_INTERVAL = 60;   // frames between thumbnail saves
+
+    std::vector<PersonRecord> gallery_;
+    std::map<int, int> track_to_person_;  // session track_id → gallery person_id
+    int next_id_               = 1;
+    int active_target_person_id_ = -1;   // gallery person we're currently following
+    std::atomic<int> pending_target_person_{-2};  // -2=no change, ≥-1=requested switch
+    int thumb_frame_counter_   = 0;
 };

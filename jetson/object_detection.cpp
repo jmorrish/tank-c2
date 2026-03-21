@@ -6,19 +6,22 @@
 
 #include "yolov8.hpp"
 #include "BoTSORT.h"
+#include "DataType.h"
 
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <fstream>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <cctype>
+#include <algorithm>
 
 // Mouse callback
 static void onMouse(int event, int x, int y, int, void* userdata){
     auto* self = static_cast<ObjectDetection*>(userdata);
     if (event == cv::EVENT_LBUTTONDOWN){
-        // mark focus request if clicked in right half (frame2 area)
-        // We'll just always set on click to keep it simple.
         LOGI("Click detected in window");
-        // we don't have v4l2 autofocus here anymore; keeping the hook
     }
 }
 
@@ -45,9 +48,8 @@ bool ObjectDetection::start(){
     rtsp_thread_ = std::thread(&ObjectDetection::rtspThreadFunc, this);
     main_thread_ = std::thread(&ObjectDetection::mainLoop, this);
 
-    // NEW: Start ZMQ publisher
     try {
-        zmq_pub_.bind("tcp://127.0.0.1:5555");  // Localhost ZMQ port for frames
+        zmq_pub_.bind("tcp://127.0.0.1:5555");
         zmq_ready_ = true;
         LOGI("ZMQ frame publisher started on tcp://127.0.0.1:5555");
     } catch (const zmq::error_t& e) {
@@ -56,27 +58,26 @@ bool ObjectDetection::start(){
 
     return true;
 }
+
 void ObjectDetection::stop(){
     if (!run_.exchange(false)) return;
     rtsp_run_.store(false);
     if (rtsp_thread_.joinable()) rtsp_thread_.join();
     if (main_thread_.joinable()) main_thread_.join();
 
-    // NEW: Stop ZMQ
     zmq_ready_ = false;
     zmq_pub_.close();
     zmq_ctx_.close();
 }
 
-// RTSP grabber — reconnects automatically on any failure
+// ── RTSP grabber ──────────────────────────────────────────────────────────────
 void ObjectDetection::rtspThreadFunc(){
     cv::VideoCapture cap2;
     int failCount = 0;
-    constexpr int MAX_FAILS    = 10;  // consecutive read failures before reconnect
-    constexpr int RETRY_SEC    = 5;   // seconds between reconnect attempts
+    constexpr int MAX_FAILS    = 10;
+    constexpr int RETRY_SEC    = 5;
 
     while (rtsp_run_.load()){
-        // (Re)open if not currently open
         if (!cap2.isOpened()){
             LOGW("RTSP: opening " << cam2_rtsp_);
             cap2.open(cam2_rtsp_);
@@ -111,8 +112,128 @@ void ObjectDetection::rtspThreadFunc(){
     }
 }
 
-// Main detection / UI loop (publishes TargetMsg)
+// ── Gallery helpers ────────────────────────────────────────────────────────────
+
+float ObjectDetection::cosineSim(const std::vector<float>& a, const std::vector<float>& b) {
+    float dot = 0, na = 0, nb = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        dot += a[i] * b[i];
+        na  += a[i] * a[i];
+        nb  += b[i] * b[i];
+    }
+    float n = std::sqrtf(na) * std::sqrtf(nb);
+    return (n > 1e-8f) ? dot / n : 0.0f;
+}
+
+void ObjectDetection::loadGallery(){
+    ::mkdir(TARGETS_DIR.c_str(), 0755);
+
+    // Read next_id counter
+    {
+        std::ifstream cf(TARGETS_DIR + "/next_id.txt");
+        if (cf.is_open()) cf >> next_id_;
+        if (next_id_ < 1) next_id_ = 1;
+    }
+
+    // Load each numeric subdirectory
+    DIR* dir = ::opendir(TARGETS_DIR.c_str());
+    if (!dir) return;
+    struct dirent* ent;
+    while ((ent = ::readdir(dir)) != nullptr) {
+        std::string name = ent->d_name;
+        if (name.empty() || name[0] == '.') continue;
+        if (!std::all_of(name.begin(), name.end(), ::isdigit)) continue;
+
+        std::string embed_path = TARGETS_DIR + "/" + name + "/embed.bin";
+        std::ifstream ef(embed_path, std::ios::binary);
+        if (!ef.is_open()) continue;
+
+        PersonRecord rec;
+        rec.id = std::stoi(name);
+        rec.embedding.resize(FEATURE_DIM);
+        ef.read(reinterpret_cast<char*>(rec.embedding.data()),
+                sizeof(float) * FEATURE_DIM);
+        if ((size_t)ef.gcount() == sizeof(float) * FEATURE_DIM)
+            gallery_.push_back(std::move(rec));
+    }
+    ::closedir(dir);
+
+    LOGI("Gallery loaded: " << gallery_.size() << " person(s) from " << TARGETS_DIR);
+}
+
+void ObjectDetection::saveEmbedding(const PersonRecord& p) const {
+    std::string dir = TARGETS_DIR + "/" + std::to_string(p.id);
+    ::mkdir(dir.c_str(), 0755);
+    std::ofstream f(dir + "/embed.bin", std::ios::binary);
+    if (f.is_open())
+        f.write(reinterpret_cast<const char*>(p.embedding.data()),
+                sizeof(float) * p.embedding.size());
+}
+
+void ObjectDetection::saveThumbnail(int person_id, const cv::Mat& crop) const {
+    std::string path = TARGETS_DIR + "/" + std::to_string(person_id) + "/thumb.jpg";
+    std::vector<uchar> buf;
+    cv::imencode(".jpg", crop, buf, {cv::IMWRITE_JPEG_QUALITY, 85});
+    std::ofstream f(path, std::ios::binary);
+    if (f.is_open())
+        f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+}
+
+int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
+    // Normalise
+    float n = 0; for (float x : raw_feat) n += x * x; n = std::sqrtf(n);
+    if (n < 1e-8f) return -1;
+    std::vector<float> feat(raw_feat.size());
+    for (size_t i = 0; i < raw_feat.size(); ++i) feat[i] = raw_feat[i] / n;
+
+    // Find best gallery match
+    float best_sim = -1.0f;
+    int   best_idx = -1;
+    for (int i = 0; i < (int)gallery_.size(); ++i) {
+        float s = cosineSim(gallery_[i].embedding, feat);
+        if (s > best_sim) { best_sim = s; best_idx = i; }
+    }
+
+    if (best_idx >= 0 && best_sim >= GALLERY_MATCH_THRESH) {
+        // EMA update: slowly adapt to appearance changes
+        auto& emb = gallery_[best_idx].embedding;
+        for (size_t i = 0; i < emb.size(); ++i)
+            emb[i] = emb[i] * 0.9f + feat[i] * 0.1f;
+        // Re-normalise after EMA
+        float en = 0; for (float x : emb) en += x * x; en = std::sqrtf(en);
+        if (en > 1e-8f) for (float& x : emb) x /= en;
+        return gallery_[best_idx].id;
+    }
+
+    // New person
+    PersonRecord rec;
+    rec.id = next_id_++;
+    rec.embedding = feat;
+    gallery_.push_back(rec);
+
+    // Persist counter and embedding
+    {
+        std::ofstream cf(TARGETS_DIR + "/next_id.txt");
+        if (cf.is_open()) cf << next_id_;
+    }
+    saveEmbedding(rec);
+
+    // Notify web clients
+    if (comms_) {
+        std::string ev = "{\"type\":\"event\",\"event\":\"new_target\",\"target_id\":"
+                         + std::to_string(rec.id) + "}";
+        comms_->sendWebEvent(ev);
+    }
+
+    LOGI("New person in gallery: ID " << rec.id);
+    return rec.id;
+}
+
+// ── Main detection / UI loop ───────────────────────────────────────────────────
 void ObjectDetection::mainLoop(){
+    // Load persisted gallery before starting
+    loadGallery();
+
     // YOLO + tracker
     YOLOv8 yolov8(engine_path_);
     yolov8.make_pipe(true);
@@ -121,7 +242,6 @@ void ObjectDetection::mainLoop(){
     cv::VideoCapture cap;
     constexpr int CAM_RETRY_SEC = 3;
 
-    // Helper: blocks until camera opens or run_ is cleared (handles hot-plug)
     auto openCam = [&]() -> bool {
         while (run_.load()){
             cap.release();
@@ -137,7 +257,7 @@ void ObjectDetection::mainLoop(){
         return false;
     };
 
-    if (!openCam()) return;   // stopped before camera ever appeared
+    if (!openCam()) return;
 
     if (!headless_){
         cv::namedWindow(window_, cv::WINDOW_NORMAL);
@@ -148,7 +268,7 @@ void ObjectDetection::mainLoop(){
     int frame_count = 0;
     auto fps_t0 = std::chrono::steady_clock::now();
     int emptyCount = 0;
-    constexpr int MAX_EMPTY = 30;  // consecutive empty frames before treating as unplugged
+    constexpr int MAX_EMPTY = 30;
 
     while (run_.load()){
         cv::Mat frame;
@@ -157,11 +277,9 @@ void ObjectDetection::mainLoop(){
             ++emptyCount;
             if (emptyCount >= MAX_EMPTY){
                 LOGW("cam1: camera lost (unplugged?) — waiting for reconnect...");
-                // Clear the target so the robot stops following while camera is gone
                 TargetMsg empty{}; empty.valid = false;
                 bus_.set(empty);
                 if (comms_) comms_->setDetectionFPS(0.0f);
-                // Block here until camera comes back (hot-plug)
                 if (!openCam()) return;
                 emptyCount = 0;
             }
@@ -169,13 +287,12 @@ void ObjectDetection::mainLoop(){
         }
         emptyCount = 0;
 
-        // YOLO
+        // ── YOLO ────────────────────────────────────────────────────────────
         std::vector<det::Object> dets;
         yolov8.copy_from_Mat(frame, input_size);
         yolov8.infer();
         yolov8.postprocess(dets);
 
-        // Build tracker detections
         std::vector<Detection> tds;
         for (auto& o : dets){
             if (o.label == 0 && o.prob >= cfg_.confidence_threshold){
@@ -187,17 +304,32 @@ void ObjectDetection::mainLoop(){
         }
         auto tracks = tracker.track(tds, frame);
 
-        // Draw all tracks; prefer the previously-tracked ID to avoid snapping
-        // to a new person who enters frame
+        // ── Pending target switch (from web UI) ──────────────────────────────
+        {
+            int pending = pending_target_person_.exchange(-2);
+            if (pending != -2) {
+                active_target_person_id_ = pending;
+                tracked_id_ = -1;   // force re-acquire
+            }
+        }
+
+        // ── Gallery pass: identify every visible track ───────────────────────
+        for (auto& tr : tracks) {
+            if (!tr->smooth_feat) continue;
+            std::vector<float> feat(tr->smooth_feat->data(),
+                                    tr->smooth_feat->data() + FEATURE_DIM);
+            int pid = matchOrCreate(feat);
+            if (pid >= 0) track_to_person_[tr->track_id] = pid;
+        }
+
+        // ── Draw all track boxes + ID labels ────────────────────────────────
         bool haveBest = false;
         cv::Rect best;
         int best_id = -1;
 
-        // First pass: re-acquire the previously tracked ID
         for (auto& tr : tracks){
             auto tlwh = tr->get_tlwh();
             cv::Rect bb(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
-            // Draw all track boxes (green) — always, so web stream shows overlays
             cv::rectangle(frame, bb, cv::Scalar(0,255,0), 2);
             cv::putText(frame, "ID:" + std::to_string(tr->track_id),
                         cv::Point(tlwh[0], tlwh[1]-5),
@@ -206,38 +338,109 @@ void ObjectDetection::mainLoop(){
                 best = bb; best_id = tr->track_id; haveBest = true;
             }
         }
-        // If our target was lost, pick the largest bounding box (closest person)
-        // rather than an arbitrary first entry
+
+        // ── Re-acquire if tracked_id_ was lost ───────────────────────────────
         if (!haveBest && !tracks.empty()){
-            float bestArea = 0.0f;
-            for (auto& tr : tracks){
-                auto tlwh = tr->get_tlwh();
-                float area = tlwh[2] * tlwh[3];
-                if (area > bestArea){
-                    bestArea = area;
-                    best    = cv::Rect(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
-                    best_id = tr->track_id;
-                    haveBest = true;
+            // Level 1: match by gallery person_id via track_to_person_
+            if (active_target_person_id_ >= 0) {
+                for (auto& tr : tracks) {
+                    auto it = track_to_person_.find(tr->track_id);
+                    if (it != track_to_person_.end() &&
+                        it->second == active_target_person_id_) {
+                        auto tlwh = tr->get_tlwh();
+                        best    = cv::Rect(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
+                        best_id = tr->track_id;
+                        haveBest = true;
+                        break;
+                    }
+                }
+            }
+
+            // Level 2: direct cosine similarity against saved embedding
+            if (!haveBest && active_target_person_id_ >= 0) {
+                for (auto& rec : gallery_) {
+                    if (rec.id != active_target_person_id_) continue;
+                    float bestSim = GALLERY_MATCH_THRESH - 0.01f;
+                    for (auto& tr : tracks) {
+                        if (!tr->smooth_feat) continue;
+                        std::vector<float> feat(tr->smooth_feat->data(),
+                                                tr->smooth_feat->data() + FEATURE_DIM);
+                        float sim = cosineSim(rec.embedding, feat);
+                        if (sim > bestSim) {
+                            bestSim = sim;
+                            auto tlwh = tr->get_tlwh();
+                            best    = cv::Rect(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
+                            best_id = tr->track_id;
+                            haveBest = true;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Level 3: fallback — largest bounding box (closest person)
+            if (!haveBest) {
+                float bestArea = 0.0f;
+                for (auto& tr : tracks){
+                    auto tlwh = tr->get_tlwh();
+                    float area = tlwh[2] * tlwh[3];
+                    if (area > bestArea){
+                        bestArea = area;
+                        best    = cv::Rect(tlwh[0], tlwh[1], tlwh[2], tlwh[3]);
+                        best_id = tr->track_id;
+                        haveBest = true;
+                    }
                 }
             }
         }
+
         tracked_id_ = haveBest ? best_id : -1;
 
-        // Highlight the active target in cyan + draw crosshair at frame centre
+        // Update active_target_person_id_ and push to Comms for telemetry
+        if (haveBest) {
+            auto it = track_to_person_.find(best_id);
+            if (it != track_to_person_.end())
+                active_target_person_id_ = it->second;
+            if (comms_) comms_->setTargetPersonId(active_target_person_id_);
+        } else {
+            if (comms_) comms_->setTargetPersonId(-1);
+        }
+
+        // ── Highlight active target + crosshair ─────────────────────────────
         if (haveBest){
             cv::rectangle(frame, best, cv::Scalar(255,255,0), 3);
-            cv::putText(frame, "TARGET",
+            std::string label = "TARGET";
+            auto it = track_to_person_.find(best_id);
+            if (it != track_to_person_.end())
+                label += " P" + std::to_string(it->second);
+            cv::putText(frame, label,
                         cv::Point(best.x, best.y - 10),
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, {255,255,0}, 2);
         }
-        // Frame-centre crosshair so you can see alignment
         {
             int cx = frame.cols/2, cy = frame.rows/2, cs = 20;
             cv::line(frame, {cx-cs,cy}, {cx+cs,cy}, {0,200,255}, 1);
             cv::line(frame, {cx,cy-cs}, {cx,cy+cs}, {0,200,255}, 1);
         }
 
-        // Publish target
+        // ── Save thumbnails periodically ─────────────────────────────────────
+        ++thumb_frame_counter_;
+        if (thumb_frame_counter_ >= THUMB_UPDATE_INTERVAL) {
+            thumb_frame_counter_ = 0;
+            for (auto& tr : tracks) {
+                auto it = track_to_person_.find(tr->track_id);
+                if (it == track_to_person_.end()) continue;
+                auto tlwh = tr->get_tlwh();
+                int x = std::max(0, (int)tlwh[0]);
+                int y = std::max(0, (int)tlwh[1]);
+                int w = std::min((int)tlwh[2], frame.cols - x);
+                int h = std::min((int)tlwh[3], frame.rows - y);
+                if (w > 10 && h > 10)
+                    saveThumbnail(it->second, frame(cv::Rect(x, y, w, h)).clone());
+            }
+        }
+
+        // ── Publish target ───────────────────────────────────────────────────
         TargetMsg msg;
         msg.valid = haveBest;
         msg.frameW = frame.cols; msg.frameH = frame.rows;
@@ -252,7 +455,7 @@ void ObjectDetection::mainLoop(){
         msg.stamp = std::chrono::steady_clock::now();
         bus_.set(msg);
 
-        // UI / overlays
+        // ── FPS ──────────────────────────────────────────────────────────────
         frame_count++;
         auto now = std::chrono::steady_clock::now();
         auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(now - fps_t0).count();
@@ -262,7 +465,7 @@ void ObjectDetection::mainLoop(){
             if (comms_) comms_->setDetectionFPS(fps);
         }
 
-        // Grab latest RTSP frame (for side-by-side)
+        // ── Grab latest RTSP frame (for side-by-side) ────────────────────────
         cv::Mat f2;
         {
             std::lock_guard<std::mutex> lk(m2_);
@@ -282,10 +485,8 @@ void ObjectDetection::mainLoop(){
             combined = frame;
         }
 
-        // Publish frame via ZMQ (non-blocking); rebind socket on failure
+        // ── ZMQ publish (scaled, non-blocking) ───────────────────────────────
         if (zmq_ready_) {
-            // Scale down to max 1280px wide before encoding to reduce bandwidth.
-            // Detection runs at full resolution; only the streamed copy is resized.
             constexpr int STREAM_MAX_W = 1280;
             cv::Mat stream_frame;
             if (combined.cols > STREAM_MAX_W) {
@@ -316,8 +517,6 @@ void ObjectDetection::mainLoop(){
                 }
             }
         }
-
-        // Remove old waitKey since headless
     }
 
     if (!headless_){
