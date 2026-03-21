@@ -27,7 +27,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 // /snapshot serves the latest JPEG for Safari/iOS which doesn't support MJPEG.
 const BOUNDARY      = 'tankframe';
 const streamClients = new Set();
-let   latestFrame   = null;   // Buffer of the most recent JPEG
+let   latestFrame   = null;    // Buffer of the most recent JPEG
+let   relayOnline   = false;   // true only while upstream connection is active
+
+function dropStreamClients() {
+    // Close all waiting /stream connections so browsers get an error and show NO SIGNAL
+    for (const res of streamClients) { try { res.end(); } catch (_) {} }
+    streamClients.clear();
+}
 
 function pushFrame(jpeg) {
     latestFrame = jpeg;
@@ -44,42 +51,51 @@ function startMjpegRelay() {
         `http://${JETSON_HOST}:${MJPEG_PORT}/stream`,
         { timeout: 5000 },
         (upstream) => {
+            relayOnline = true;
             upstream.on('data', chunk => {
                 buf = Buffer.concat([buf, chunk]);
-                // Parse complete MJPEG frames by Content-Length
                 while (true) {
                     const bStart = buf.indexOf(`--${BOUNDARY}\r\n`);
                     if (bStart === -1) { buf = Buffer.alloc(0); break; }
                     const hEnd = buf.indexOf('\r\n\r\n', bStart);
                     if (hEnd === -1) break;
-                    const header  = buf.slice(bStart, hEnd).toString();
+                    const header   = buf.slice(bStart, hEnd).toString();
                     const lenMatch = header.match(/Content-Length:\s*(\d+)/i);
                     if (!lenMatch) { buf = buf.slice(bStart + 1); continue; }
                     const frameLen   = parseInt(lenMatch[1]);
                     const frameStart = hEnd + 4;
                     const frameEnd   = frameStart + frameLen;
-                    if (buf.length < frameEnd) break;   // wait for more data
+                    if (buf.length < frameEnd) break;
                     pushFrame(buf.slice(frameStart, frameEnd));
                     buf = buf.slice(frameEnd);
                 }
             });
-            upstream.on('end',   () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
-            upstream.on('error', () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
+            const done = () => {
+                relayOnline = false; latestFrame = null;
+                dropStreamClients();   // force browser onerror → NO SIGNAL
+                setTimeout(startMjpegRelay, 3000);
+            };
+            upstream.on('end',   done);
+            upstream.on('error', done);
         }
     );
     req.on('timeout', () => { req.destroy(); });
-    req.on('error',   () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
+    req.on('error',   () => {
+        relayOnline = false; latestFrame = null;
+        dropStreamClients();
+        setTimeout(startMjpegRelay, 3000);
+    });
 }
 startMjpegRelay();
 
-// MJPEG stream for Chrome/Firefox/Android
+// MJPEG stream for Chrome/Firefox/Android — returns 503 immediately if offline
 app.get('/stream', (req, res) => {
+    if (!relayOnline) return res.status(503).end();
     res.writeHead(200, {
         'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
         'Cache-Control': 'no-cache, no-store',
         'Connection':    'keep-alive',
     });
-    // Send latest frame immediately so client doesn't wait for next keyframe
     if (latestFrame) {
         res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestFrame.length}\r\n\r\n`);
         res.write(latestFrame);
