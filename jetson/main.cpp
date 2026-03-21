@@ -46,6 +46,7 @@ int main(int argc, char** argv){
     std::string engine_path = argv[1];
     bool headless      = DEFAULT_HEADLESS;
     bool auto_continue = false;
+    bool no_hw         = false;   // skip all hardware — web IPC only (for testing)
     std::string ip   = TEENSY_IP_DEFAULT;
     int         port = TEENSY_PORT_DEFAULT;
     std::string sensor_ip   = SENSOR_IP_DEFAULT;
@@ -55,6 +56,7 @@ int main(int argc, char** argv){
         std::string a = argv[i];
         if      (a == "--headless")      headless = true;
         else if (a == "--auto-continue") auto_continue = true;
+        else if (a == "--no-hw")         no_hw = true;
         // Combined ip:port forms (e.g. --ptu-ip 192.168.0.177:23)
         else if (a == "--ptu-ip"    && i+1 < argc) parseIpPort(argv[++i], ip, port);
         else if (a == "--sensor-ip" && i+1 < argc){
@@ -67,16 +69,38 @@ int main(int argc, char** argv){
         else if (a == "--sensor-port"&& i+1 < argc) sensor_port = std::stoi(argv[++i]);
     }
 
-    // pick cam1
-    auto cams = enumerateCams();
-    if (cams.empty()){
-        LOGE("No local cameras found.");
+    // Comms — hardware connections are non-fatal so the web IPC still starts
+    Comms comms;
+    if (!no_hw){
+        if (!comms.connectControl(ip, port))
+            LOGW("Control Teensy not reachable — continuing without it");
+        if (!comms.connectSensor(sensor_ip, sensor_port))
+            LOGW("Sensor Teensy not reachable — continuing without it");
+    } else {
+        LOGI("--no-hw: skipping hardware connections");
+    }
+
+    // Start web IPC (always — this is what the website talks to)
+    if (!comms.startWebIPC(9999)){
+        LOGE("Failed to start Web IPC — cannot continue");
         return 1;
+    }
+
+    // If no-hw or no camera available, run in web-only mode (no vision/movement)
+    auto cams = no_hw ? std::vector<int>{} : enumerateCams();
+    bool vision_enabled = !cams.empty() && !no_hw;
+
+    if (!vision_enabled){
+        LOGI("Running in web-only mode (no camera/vision). Web IPC active on port 9999.");
+        LOGI("Press Ctrl+C to exit.");
+        while (true)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        comms.stopWebIPC();
+        return 0;
     }
 
     int cam1 = -1;
     if (auto_continue || headless){
-        // Non-interactive: use first available camera automatically
         cam1 = cams[0];
         LOGI("Auto-selected camera " << cam1);
     } else {
@@ -91,49 +115,31 @@ int main(int argc, char** argv){
         }
     }
 
-    // Comms
-    Comms comms;
-    if (!comms.connectControl(ip, port)){
-        LOGE("Failed to connect to control Teensy");
-        return 1;
-    }
-    if (!comms.connectSensor(sensor_ip, sensor_port)){
-        LOGE("Failed to connect to sensor Teensy");
-        return 1;
-    }
-
-    // NEW: Start Web IPC
-    if (!comms.startWebIPC(9999)){
-        LOGE("Failed to start Web IPC");
-        // Continue or handle as needed; not fatal
-    }
+    // Load runtime config (falls back to compiled defaults if missing)
+    RuntimeConfig cfg = RuntimeConfig::load("config.json");
 
     // Shared bus: detection -> movement
     AtomicLatest<TargetMsg> bus;
 
-    // Load runtime config (falls back to compiled defaults if missing)
-    RuntimeConfig cfg = RuntimeConfig::load("config.json");
-
-    // Start modules
     ObjectDetection det(engine_path, cam1, CAM2_RTSP, headless, bus, &comms, cfg);
     if (!det.start()){
         LOGE("Failed to start ObjectDetection");
+        comms.stopWebIPC();
         return 1;
     }
     Movement mov(comms, bus, cfg);
     if (!mov.start()){
         LOGE("Failed to start Movement");
         det.stop();
+        comms.stopWebIPC();
         return 1;
     }
 
-    // Wait until detection window closes (or 'q' pressed there), then cleanup.
-    while (det.isRunning()){
+    while (det.isRunning())
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
+
     mov.stop();
     det.stop();
-    // NEW: Stop Web IPC
     comms.stopWebIPC();
     return 0;
 }
