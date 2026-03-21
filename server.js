@@ -20,21 +20,80 @@ const wss    = new WebSocketServer({ server });
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── MJPEG stream proxy (Jetson mjpeg_bridge.py → browser) ────────────────────
-// The MJPEG bridge runs on the Jetson at port 8080; this proxies it through
-// so browsers hitting the VPS at /stream get the live camera feed.
-app.get('/stream', (req, res) => {
-    const upstream = http.get(
+// ── MJPEG relay (one upstream connection → fan-out to all viewers) ───────────
+// Keeps a single persistent connection to mjpeg_bridge on the Jetson.
+// All browser /stream clients receive frames from this one connection so
+// Jetson upload stays constant regardless of viewer count.
+// /snapshot serves the latest JPEG for Safari/iOS which doesn't support MJPEG.
+const BOUNDARY      = 'tankframe';
+const streamClients = new Set();
+let   latestFrame   = null;   // Buffer of the most recent JPEG
+
+function pushFrame(jpeg) {
+    latestFrame = jpeg;
+    const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`;
+    for (const res of streamClients) {
+        try { res.write(header); res.write(jpeg); res.write('\r\n'); }
+        catch (_) { streamClients.delete(res); }
+    }
+}
+
+function startMjpegRelay() {
+    let buf = Buffer.alloc(0);
+    const req = http.get(
         `http://${JETSON_HOST}:${MJPEG_PORT}/stream`,
-        { timeout: 4000 },   // fail fast when Jetson is unreachable (Tailscale drops packets silently)
-        (upRes) => {
-            res.writeHead(upRes.statusCode, upRes.headers);
-            upRes.pipe(res);
-            req.on('close', () => upRes.destroy());
+        { timeout: 5000 },
+        (upstream) => {
+            upstream.on('data', chunk => {
+                buf = Buffer.concat([buf, chunk]);
+                // Parse complete MJPEG frames by Content-Length
+                while (true) {
+                    const bStart = buf.indexOf(`--${BOUNDARY}\r\n`);
+                    if (bStart === -1) { buf = Buffer.alloc(0); break; }
+                    const hEnd = buf.indexOf('\r\n\r\n', bStart);
+                    if (hEnd === -1) break;
+                    const header  = buf.slice(bStart, hEnd).toString();
+                    const lenMatch = header.match(/Content-Length:\s*(\d+)/i);
+                    if (!lenMatch) { buf = buf.slice(bStart + 1); continue; }
+                    const frameLen   = parseInt(lenMatch[1]);
+                    const frameStart = hEnd + 4;
+                    const frameEnd   = frameStart + frameLen;
+                    if (buf.length < frameEnd) break;   // wait for more data
+                    pushFrame(buf.slice(frameStart, frameEnd));
+                    buf = buf.slice(frameEnd);
+                }
+            });
+            upstream.on('end',   () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
+            upstream.on('error', () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
         }
     );
-    upstream.on('timeout', () => upstream.destroy());  // destroy triggers 'error' below
-    upstream.on('error',   () => { if (!res.headersSent) res.status(503).end(); });
+    req.on('timeout', () => { req.destroy(); });
+    req.on('error',   () => { latestFrame = null; setTimeout(startMjpegRelay, 3000); });
+}
+startMjpegRelay();
+
+// MJPEG stream for Chrome/Firefox/Android
+app.get('/stream', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
+        'Cache-Control': 'no-cache, no-store',
+        'Connection':    'keep-alive',
+    });
+    // Send latest frame immediately so client doesn't wait for next keyframe
+    if (latestFrame) {
+        res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestFrame.length}\r\n\r\n`);
+        res.write(latestFrame);
+        res.write('\r\n');
+    }
+    streamClients.add(res);
+    req.on('close', () => streamClients.delete(res));
+});
+
+// Single JPEG snapshot for Safari/iOS (polled by JS at ~10 fps)
+app.get('/snapshot', (req, res) => {
+    if (!latestFrame) return res.status(503).end();
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
+    res.end(latestFrame);
 });
 
 // ── Jetson TCP bridge ─────────────────────────────────────────────────────────

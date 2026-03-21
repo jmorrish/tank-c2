@@ -326,9 +326,8 @@ button,a,[role=button]{touch-action:manipulation}
       <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING…</span>
     </div>
 
-    <!-- Live stream img -->
+    <!-- Live stream img (src set by JS — MJPEG for Chrome/Android, snapshot polling for Safari/iOS) -->
     <img id="streamImg"
-      src="/stream"
       alt="Camera feed"
       style="width:100%;display:block;max-height:360px;object-fit:contain"
       onerror="streamErr()"
@@ -916,6 +915,29 @@ function moveMissionTarget(lat,lon){
 }
 function clearMissionTarget(){if(missionTargetMk&&map){map.removeLayer(missionTargetMk);missionTargetMk=null}}
 
+// ── Stream: MJPEG for Chrome/Firefox/Android, snapshot polling for Safari/iOS ─
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+let snapshotTimer = null;
+
+function startStream() {
+  const img = document.getElementById('streamImg');
+  if (isSafari) {
+    // Safari doesn't support MJPEG in <img> — poll /snapshot at ~10 fps instead
+    img.src = '/snapshot?' + Date.now();
+  } else {
+    img.src = '/stream?' + Date.now();
+  }
+}
+
+function snapshotTick() {
+  if (!isSafari || !streamOnline) return;
+  const img = document.getElementById('streamImg');
+  const next = new Image();
+  next.onload  = () => { img.src = next.src; snapshotTimer = setTimeout(snapshotTick, 100); };
+  next.onerror = () => { streamErr(); };
+  next.src = '/snapshot?' + Date.now();
+}
+
 // ── Stream quality slider ───────────────────────────────────────────────────
 let sqDebounce = null;
 function onSQSlider(v) {
@@ -934,10 +956,13 @@ function streamOk() {
   document.getElementById('streamPlaceholder').style.display = 'none';
   const s = document.getElementById('streamStatus');
   s.textContent = 'LIVE'; s.style.color = 'var(--accent)';
+  // Safari: kick off snapshot polling loop now that we have a good frame
+  if (isSafari) { clearTimeout(snapshotTimer); snapshotTimer = setTimeout(snapshotTick, 100); }
 }
 
 function streamErr() {
   streamOnline = false;
+  clearTimeout(snapshotTimer);
   document.getElementById('streamImg').style.display = 'none';
   document.getElementById('streamPlaceholder').style.display = 'flex';
   const s = document.getElementById('streamStatus');
@@ -947,11 +972,7 @@ function streamErr() {
 
 function scheduleStreamRetry(delay) {
   clearTimeout(streamRetryTimer);
-  streamRetryTimer = setTimeout(() => {
-    const img = document.getElementById('streamImg');
-    // Swap src to kick a fresh request; onerror/onload will fire again
-    img.src = '/stream?' + Date.now();
-  }, delay);
+  streamRetryTimer = setTimeout(() => startStream(), delay);
 }
 
 // Stale-stream watchdog: MJPEG can silently freeze without firing onerror.
@@ -987,6 +1008,7 @@ setInterval(() => {
 initMap();
 initStaleWatchdog();
 connectWS();
+startStream();
 </script>
 </body>
 </html>
