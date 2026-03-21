@@ -19,7 +19,7 @@ import socket
 import logging
 import os
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 log = logging.getLogger('mjpeg')
@@ -179,8 +179,8 @@ def run_server():
         try:
             log.info(f"Starting MJPEG server on http://0.0.0.0:{HTTP_PORT}/stream")
             # SO_REUSEADDR so we can restart quickly without 'address in use'
-            HTTPServer.allow_reuse_address = True
-            srv = HTTPServer(('0.0.0.0', HTTP_PORT), Handler)
+            ThreadingHTTPServer.allow_reuse_address = True
+            srv = ThreadingHTTPServer(('0.0.0.0', HTTP_PORT), Handler)
             srv.serve_forever()
         except OSError as e:
             log.error(f"Server error: {e} — retrying in 5s")
