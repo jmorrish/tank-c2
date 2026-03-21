@@ -149,52 +149,66 @@ tbody td{padding:9px 10px;font-size:12px}
 
 /* ── MOBILE / RESPONSIVE ─────────────────────────────────────────────────── */
 .short{display:none}
+/* Remove 300ms tap delay on all interactive elements */
+button,a,[role=button]{touch-action:manipulation}
 
 /* Tablet (≤ 900px) */
 @media(max-width:900px){
   .tele-grid{grid-template-columns:repeat(2,1fr)}
 }
 
-/* Mobile (≤ 768px) */
+/* Mobile (≤ 768px) — natural page scroll, sticky header */
 @media(max-width:768px){
-  /* Header: wrap tabs onto second row */
-  header{flex-wrap:wrap;height:auto;min-height:46px;padding:6px 10px}
-  .logo{font-size:13px}
-  .tabs{order:3;width:calc(100% + 20px);margin:4px -10px 0;padding:4px 10px 2px;border-top:1px solid var(--border)}
-  .tab-btn{flex:1;text-align:center;padding:7px 2px;font-size:11px}
+  /* ── Layout: body scrolls, not clipped ── */
+  html{height:100%}
+  body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+
+  /* Sticky header so tabs stay in view while scrolling */
+  header{position:sticky;top:0;z-index:300;flex-wrap:wrap;height:auto;min-height:46px;padding:6px 10px}
+  .logo{font-size:13px;letter-spacing:2px}
+  .tabs{order:3;width:100%;margin-top:4px;padding-top:4px;border-top:1px solid var(--border)}
+  .tab-btn{flex:1;text-align:center;padding:9px 2px;font-size:11px}
   .full{display:none}.short{display:inline}
 
-  /* Larger tap targets */
-  .btn{min-height:38px}
-  .dpad button,.ptupad button{min-width:44px;min-height:44px}
+  /* Tab panes: grow to content height (no more hard clipping) */
+  .tab-pane{flex:none;overflow:visible}
+  .tab-pane.active{display:flex;flex-direction:column;height:auto}
 
-  /* Dashboard */
+  /* Tap targets */
+  .btn{min-height:40px}
+
+  /* ── Dashboard ── */
+  #tab-dashboard{overflow:visible;height:auto;padding:10px}
   .tele-grid{grid-template-columns:repeat(2,1fr)}
   .ctrl-row{grid-template-columns:1fr}
   .ctrl-card{padding:10px}
+  .kbhint{display:none} /* no keyboard on mobile */
 
-  /* Mission planner: panel stacks above map */
-  #tab-planner{flex-direction:column;overflow-y:auto}
-  .pp{width:100%;max-height:none;border-right:none;border-bottom:1px solid var(--border);overflow:visible}
-  .wpscroll{max-height:180px}
+  /* ── Planner: panel full-width above map ── */
+  #tab-planner{flex-direction:column;height:auto;overflow:visible}
+  .pp{width:100%;flex:none;height:auto;overflow:visible;border-right:none;border-bottom:1px solid var(--border)}
+  .wpscroll{flex:none;max-height:200px;overflow-y:auto}
   .wped{max-height:none}
-  .mapwrap{height:360px;flex:none}
+  .mapwrap{height:380px;flex:none}
   .pfooter{flex-wrap:wrap}
   .pfooter .btn{flex:1 0 calc(50% - 8px)}
 
-  /* Missions library: horizontal scroll */
-  .libwrap{overflow-x:auto}
+  /* ── Missions library ── */
+  #tab-missions{height:auto;overflow:visible}
+  .libwrap{flex:none;overflow-x:auto}
   table{min-width:520px}
 }
 
 /* Small phone (≤ 480px) */
 @media(max-width:480px){
   .tele-grid{grid-template-columns:1fr}
+  .ctrl-card{padding:8px}
   .dpad,.ptupad{grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px)}
   .dpad button,.ptupad button{font-size:22px}
   .abtn .btn{min-height:44px}
   .mapcoords{display:none}
-  #tab-dashboard{padding:8px;gap:8px}
+  #tab-dashboard{padding:8px}
+  .mapwrap{height:320px}
 }
 </style>
 </head>
