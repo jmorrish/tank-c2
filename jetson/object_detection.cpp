@@ -121,7 +121,7 @@ float ObjectDetection::cosineSim(const std::vector<float>& a, const std::vector<
         na  += a[i] * a[i];
         nb  += b[i] * b[i];
     }
-    float n = std::sqrtf(na) * std::sqrtf(nb);
+    float n = std::sqrt(na) * std::sqrt(nb);
     return (n > 1e-8f) ? dot / n : 0.0f;
 }
 
@@ -181,7 +181,7 @@ void ObjectDetection::saveThumbnail(int person_id, const cv::Mat& crop) const {
 
 int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
     // Normalise
-    float n = 0; for (float x : raw_feat) n += x * x; n = std::sqrtf(n);
+    float n = 0; for (float x : raw_feat) n += x * x; n = std::sqrt(n);
     if (n < 1e-8f) return -1;
     std::vector<float> feat(raw_feat.size());
     for (size_t i = 0; i < raw_feat.size(); ++i) feat[i] = raw_feat[i] / n;
@@ -200,7 +200,7 @@ int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
         for (size_t i = 0; i < emb.size(); ++i)
             emb[i] = emb[i] * 0.9f + feat[i] * 0.1f;
         // Re-normalise after EMA
-        float en = 0; for (float x : emb) en += x * x; en = std::sqrtf(en);
+        float en = 0; for (float x : emb) en += x * x; en = std::sqrt(en);
         if (en > 1e-8f) for (float& x : emb) x /= en;
         return gallery_[best_idx].id;
     }

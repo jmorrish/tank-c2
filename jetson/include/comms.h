@@ -75,6 +75,9 @@ public:
     // Commands from web — returns custom response string, or "" to use getStatusJson()
     std::string handleWebCommand(const std::string& cmd);
 
+    // Thread-safe push of a one-shot event line to the web client
+    void sendWebEvent(const std::string& json_str);
+
 private:
     // Control TCP
     int         control_sock_ = -1;
@@ -143,7 +146,6 @@ private:
 
     // helpers
     bool sendLine(int sock, std::mutex& mtx, const std::string& label, const std::string& line);
-    void sendWebEvent(const std::string& json_str);  // thread-safe push of a one-shot event line
     static int  openTcpSocket(const std::string& ip, int port);
     static void controlRxLoop(Comms* self);
     static void sensorRxLoop(Comms* self);
