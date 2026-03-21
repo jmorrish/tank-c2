@@ -174,7 +174,8 @@ bool Comms::getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) 
 }
 
 bool Comms::getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const{
-    GPSData gps = gps_.load();
+    GPSData gps;
+    { std::lock_guard<std::mutex> lk(gps_mtx_); gps = gps_; }
     if (!gps.valid) return false;
     lat = gps.lat;
     lon = gps.lon;
@@ -341,14 +342,15 @@ void Comms::sensorRxLoop(Comms* self){
                         } catch (...) { continue; }
                     } else continue;
 
-                    GPSData gps = self->gps_.load();
-                    gps.lat = lat_deg;
-                    gps.lon = lon_deg;
-                    gps.alt = alt;
-                    gps.quality = quality;
-                    gps.sats = sats;
-                    gps.valid = (quality > 0);
-                    self->gps_.store(gps);
+                    {
+                        std::lock_guard<std::mutex> lk(self->gps_mtx_);
+                        self->gps_.lat     = lat_deg;
+                        self->gps_.lon     = lon_deg;
+                        self->gps_.alt     = alt;
+                        self->gps_.quality = quality;
+                        self->gps_.sats    = sats;
+                        self->gps_.valid   = (quality > 0);
+                    }
                     self->gps_stamp_ns_.store(now_ns());
                 } else if (line.rfind("$GPRMC", 0) == 0){
                     // Parse RMC (assuming RVC is a typo for RMC)
@@ -371,10 +373,11 @@ void Comms::sensorRxLoop(Comms* self){
                     float course = 0.0f;
                     try { course = std::stof(fields[8]); } catch (...) { continue; }
 
-                    GPSData gps = self->gps_.load();
-                    gps.speed_knots = speed;
-                    gps.course_deg = course;
-                    self->gps_.store(gps);
+                    {
+                        std::lock_guard<std::mutex> lk(self->gps_mtx_);
+                        self->gps_.speed_knots = speed;
+                        self->gps_.course_deg  = course;
+                    }
                     self->gps_stamp_ns_.store(now_ns());
                 }
                 // ignore other lines (ENC comes from control Teensy, not sensor)
@@ -517,18 +520,23 @@ void Comms::sendWebEvent(const std::string& json_str) {
 std::string Comms::getStatusJson() const {
     nlohmann::json j;
 
+    constexpr double STALE_THRESHOLD_MS = 2000.0;
+
     float yaw, pitch, roll; double iage;
     getLatestYPR(yaw, pitch, roll, iage);
-    j["imu"] = {{"yaw", yaw}, {"pitch", pitch}, {"roll", roll}, {"age_ms", iage}};
+    j["imu"] = {{"yaw", yaw}, {"pitch", pitch}, {"roll", roll}, {"age_ms", iage},
+                {"stale", iage > STALE_THRESHOLD_MS}};
 
     double lat, lon, gage; float alt, speed, course; int qual, sats;
     getLatestGPS(lat, lon, alt, speed, course, qual, sats, gage);
     j["gps"] = {{"lat", lat}, {"lon", lon}, {"alt", alt}, {"speed_knots", speed},
-                {"course_deg", course}, {"quality", qual}, {"sats", sats}, {"age_ms", gage}};
+                {"course_deg", course}, {"quality", qual}, {"sats", sats}, {"age_ms", gage},
+                {"stale", gage > STALE_THRESHOLD_MS}};
 
     int left, right; double eage;
     getLatestEncoders(left, right, eage);
-    j["encoders"] = {{"left", left}, {"right", right}, {"age_ms", eage}};
+    j["encoders"] = {{"left", left}, {"right", right}, {"age_ms", eage},
+                     {"stale", eage > STALE_THRESHOLD_MS}};
 
     double dage;
     j["distance_m"]     = getLatestDistance(&dage);
@@ -604,7 +612,8 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
 
     // ── Manual PTU centre ─────────────────────────────────────────────────────
     if (cmd == "manual_ptu:centre") {
-        sendPTUVelocity(0, 0);
+        sendPTUVelocity(0, 0);                                          // stop velocity
+        sendLine(control_sock_, control_send_mtx_, "PTU", "P0T0");     // hard position centre
         return "";
     }
 
@@ -841,14 +850,16 @@ void Comms::missionLoop(Comms* self) {
     LOGI("Mission executor started");
 
     // ── Parse mission JSON ────────────────────────────────────────────────────
+    // Snapshot the JSON string under the lock so a concurrent mission_start /
+    // mission_resume command cannot modify mission_json_ while we are parsing
+    // or iterating waypoints.
+    std::string json_copy;
+    { std::lock_guard<std::mutex> lk(self->mission_mtx_); json_copy = self->mission_json_; }
     nlohmann::json mission;
-    {
-        std::lock_guard<std::mutex> lk(self->mission_mtx_);
-        try { mission = nlohmann::json::parse(self->mission_json_); }
-        catch (const std::exception& e) {
-            LOGE("Mission: bad JSON: " << e.what());
-            self->mission_run_.store(false); self->setMode(ControlMode::STOPPED); return;
-        }
+    try { mission = nlohmann::json::parse(json_copy); }
+    catch (const std::exception& e) {
+        LOGE("Mission: bad JSON: " << e.what());
+        self->mission_run_.store(false); self->setMode(ControlMode::STOPPED); return;
     }
     if (!mission.contains("waypoints") || !mission["waypoints"].is_array()
         || mission["waypoints"].empty()) {

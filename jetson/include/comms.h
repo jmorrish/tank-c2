@@ -91,8 +91,9 @@ private:
     std::atomic<float> imu_roll_{std::numeric_limits<float>::quiet_NaN()};
     std::atomic<int64_t> imu_stamp_ns_{0}; // steady_clock::now().time_since_epoch().count()
 
-    // GPS latest
-    std::atomic<GPSData> gps_{};
+    // GPS latest (mutex-protected: GPSData is too large for a lock-free atomic)
+    mutable std::mutex gps_mtx_;
+    GPSData            gps_{};
     std::atomic<int64_t> gps_stamp_ns_{0};
 
     // Encoders latest

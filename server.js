@@ -30,8 +30,10 @@ const RECONNECT_DELAY_MS = 3000;
 const clients = new Set();
 
 // Queue for critical commands that must be delivered even after a reconnect.
-// Only the latest abort/stop is kept — no need to replay old ones.
-let pendingCritical = null;  // { cmd, broadcastOnDeliver }
+// Stored as an array so multiple commands (e.g. abort then stop_follow) are not
+// lost.  Capped at 5 to prevent unbounded growth.
+const PENDING_CRITICAL_MAX = 5;
+let pendingCritical = [];  // [{ cmd, broadcastOnDeliver }, ...]
 
 function broadcast(msg) {
     const str = JSON.stringify(msg);
@@ -72,13 +74,14 @@ function connectJetson() {
         jetsonOnline = true;
         sock.setKeepAlive(true, 5000);
         broadcast({ type: 'connection', status: 'connected' });
-        // Deliver any critical command that was issued while offline
-        if (pendingCritical) {
-            const { cmd, broadcastOnDeliver } = pendingCritical;
-            pendingCritical = null;
-            sock.write(cmd + '\n');
-            console.log(`[jetson] Delivered queued critical command: ${cmd}`);
-            if (broadcastOnDeliver) broadcast(broadcastOnDeliver);
+        // Deliver any critical commands that were issued while offline
+        if (pendingCritical.length) {
+            const queue = pendingCritical.splice(0);
+            for (const { cmd, broadcastOnDeliver } of queue) {
+                sock.write(cmd + '\n');
+                console.log(`[jetson] Delivered queued critical command: ${cmd}`);
+                if (broadcastOnDeliver) broadcast(broadcastOnDeliver);
+            }
         }
     });
 
@@ -110,6 +113,9 @@ function connectJetson() {
         if (jetsonOnline) {
             console.log('[jetson] Disconnected');
             broadcast({ type: 'connection', status: 'disconnected' });
+            // Clear stale telemetry so reconnecting clients don't see stale data
+            lastStatus = null;
+            broadcast({ type: 'status', data: null });
         }
         jetsonOnline  = false;
         jetsonSocket  = null;
@@ -214,6 +220,9 @@ app.post('/api/missions/:id/push', (req, res) => {
     const fp = missionFile(req.params.id);
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     const mission = JSON.parse(fs.readFileSync(fp));
+    // JSON.stringify with no indent argument never emits literal newlines in its
+    // output — user-typed newlines in string fields are escaped as \n (two chars),
+    // so the Jetson's newline-delimited parser always sees exactly one line here.
     const ok = sendToJetson(`mission_save:${JSON.stringify(mission)}`);
     broadcast({ type: 'mission_status', event: 'pushed', missionId: mission.id, name: mission.name });
     res.json({ ok });
@@ -246,10 +255,12 @@ app.post('/api/missions/abort', (_req, res) => {
         broadcast({ type: 'mission_status', event: 'aborted' });
     } else {
         // Jetson is offline — queue the abort so it fires the moment it reconnects
-        pendingCritical = {
-            cmd: 'mission_abort',
-            broadcastOnDeliver: { type: 'mission_status', event: 'aborted' }
-        };
+        if (pendingCritical.length < PENDING_CRITICAL_MAX) {
+            pendingCritical.push({
+                cmd: 'mission_abort',
+                broadcastOnDeliver: { type: 'mission_status', event: 'aborted' }
+            });
+        }
         broadcast({ type: 'mission_status', event: 'abort_pending' });
         console.warn('[jetson] Abort queued — will send on reconnect');
     }

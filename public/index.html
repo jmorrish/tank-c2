@@ -4,9 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tank C2 — Buzzgeef</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqVE=" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
+  integrity="sha256-yGMZd5cDQJGcbE8BHnLMsMGEH1Lz7gKoV6mCfhcKXBY=" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg:    #0a0e1a; --panel: #111827; --border: #1f2937;
@@ -64,6 +67,7 @@ input[type=range]{flex:1;accent-color:var(--accent)}
 #tab-dashboard{flex-direction:column;overflow-y:auto;padding:12px;gap:12px}
 .tele-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;flex-shrink:0}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+.card.stale{border-color:var(--warn)}.card.stale .tv{color:var(--warn)}
 .card-title{font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:10px}
 .card-row{display:flex;justify-content:space-between;margin-bottom:5px}
 .card-label{color:var(--muted)}
@@ -454,6 +458,9 @@ button,a,[role=button]{touch-action:manipulation}
 </div>
 
 <script>
+// ── Helpers ────────────────────────────────────────────────────────────────
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
 // ── WebSocket — exponential backoff reconnect ──────────────────────────────
 let ws, wsDelay = 1000;
 function connectWS(){
@@ -493,11 +500,19 @@ function handle(m){
 let lastGPS=null;
 const f=(v,d=1,u='')=>(v==null||isNaN(v))?'—':v.toFixed(d)+(u?' '+u:'');
 const sv2=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+const cardOf=id=>{const e=document.getElementById(id);return e?e.closest('.card'):null};
+const setStale=(id,stale)=>{const c=cardOf(id);if(c)c.classList.toggle('stale',stale)};
 function updateTele(d){
-  if(d.imu){sv2('iY',f(d.imu.yaw,1,'°'));sv2('iP',f(d.imu.pitch,1,'°'));sv2('iR',f(d.imu.roll,1,'°'));sv2('iA',f(d.imu.age_ms,0,'ms'))}
-  if(d.gps){const g=d.gps;sv2('gLa',f(g.lat,6));sv2('gLo',f(g.lon,6));sv2('gAl',f(g.alt,1,'m'));sv2('gSp',f(g.speed_knots*1.852,1,'km/h'));sv2('gSa',`${g.sats} / Q${g.quality}`);if(g.quality>0&&g.lat!==0){lastGPS=[g.lat,g.lon];moveTank(g.lat,g.lon)}}
-  if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'))}
-  if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'))}
+  if(!d){
+    // Jetson disconnected — reset all displayed values to dashes
+    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps'].forEach(id=>sv2(id,'—'));
+    ['iY','gLa','eL','dV'].forEach(id=>setStale(id,false));
+    return;
+  }
+  if(d.imu){sv2('iY',f(d.imu.yaw,1,'°'));sv2('iP',f(d.imu.pitch,1,'°'));sv2('iR',f(d.imu.roll,1,'°'));sv2('iA',f(d.imu.age_ms,0,'ms'));setStale('iY',d.imu.age_ms>2000)}
+  if(d.gps){const g=d.gps;sv2('gLa',f(g.lat,6));sv2('gLo',f(g.lon,6));sv2('gAl',f(g.alt,1,'m'));sv2('gSp',f(g.speed_knots*1.852,1,'km/h'));sv2('gSa',`${g.sats} / Q${g.quality}`);setStale('gLa',g.age_ms>2000);if(g.quality>0&&g.lat!==0){lastGPS=[g.lat,g.lon];moveTank(g.lat,g.lon)}}
+  if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'));setStale('eL',d.encoders.age_ms>2000)}
+  if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'));setStale('dV',d.distance_age_ms>2000)}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
   // Mode + mission progress from Jetson telemetry
   if(d.mission&&d.mission.running){
@@ -525,7 +540,8 @@ function updateTele(d){
 const WM=1000,PM=500;
 const spd=()=>+document.getElementById('ss').value/100;
 const pspd=()=>+document.getElementById('ps').value/100;
-const wc=(l,r)=>sendCmd(`manual_wheel:${Math.round(l*WM*spd())}:${Math.round(r*WM*spd())}`);
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const wc=(l,r)=>sendCmd(`manual_wheel:${Math.round(clamp(l*WM*spd(),-WM,WM))}:${Math.round(clamp(r*WM*spd(),-WM,WM))}`);
 const pc=(p,t)=>sendCmd(`manual_ptu:${Math.round(p*PM*pspd())}:${Math.round(t*PM*pspd())}`);
 function eStop(){sendCmd('emergency_stop');sendCmd('manual_wheel:0:0');sendCmd('manual_ptu:0:0')}
 
@@ -564,6 +580,8 @@ document.addEventListener('keyup',e=>{
   if(['KeyW','KeyX','KeyA','KeyD','Space'].includes(e.code))wc(0,0);
   if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code))pc(0,0);
 });
+// If the window loses focus (alt-tab etc.) keyup events are lost — stop the robot
+window.addEventListener('blur',()=>{kd.clear();wc(0,0);pc(0,0);});
 
 // ── Tab ────────────────────────────────────────────────────────────────────
 function go(name){
@@ -580,7 +598,9 @@ let map,osmL,satL,satOn=false,addMode=false,tankMk=null,wpMks=[],wpPoly=null;
 const COLORS=['#00e676','#00b0ff','#ffab00','#ff6e40','#e040fb','#40c4ff','#69f0ae','#ffd740','#ff6090','#a7ffeb'];
 
 function initMap(){
-  map=L.map('map',{zoomControl:true}).setView([51.5,-0.1],14);
+  // Use the tank's last known GPS position if available, otherwise default to London
+  const initView = lastGPS ? lastGPS : [51.5,-0.1];
+  map=L.map('map',{zoomControl:true}).setView(initView,lastGPS?17:14);
   osmL=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(map);
   satL=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
   map.on('click',e=>{if(addMode){addWP(e.latlng.lat,e.latlng.lng);exitAdd()}});
@@ -594,8 +614,11 @@ function exitAdd(){addMode=false;document.getElementById('addbadge').classList.a
 function moveTank(lat,lng){
   if(!map)return;
   const icon=L.divIcon({className:'',iconSize:[32,32],iconAnchor:[16,16],html:'<div style="width:32px;height:32px;border-radius:50%;background:rgba(0,230,118,.18);border:2px solid #00e676;display:flex;align-items:center;justify-content:center;font-size:18px">🚗</div>'});
-  if(!tankMk)tankMk=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
-  else tankMk.setLatLng([lat,lng]);
+  if(!tankMk){
+    // First GPS fix — pan the map to the tank's position
+    tankMk=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
+    map.setView([lat,lng],17);
+  } else tankMk.setLatLng([lat,lng]);
 }
 function mkIcon(i,action){
   const c=COLORS[i%COLORS.length];
@@ -606,7 +629,7 @@ function redrawMap(){
   if(wpPoly){map.removeLayer(wpPoly);wpPoly=null}
   wps.forEach((wp,i)=>{
     const mk=L.marker([wp.lat,wp.lng],{icon:mkIcon(i,wp.arrivalAction),draggable:true}).addTo(map)
-      .bindPopup(`<b style="color:var(--accent)">WP${i+1}: ${wp.name}</b><br><span style="color:var(--muted);font-size:11px">${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</span><br><span style="color:var(--warn);font-size:11px">▸ ${wp.arrivalAction||'continue'}</span>`);
+      .bindPopup(`<b style="color:var(--accent)">WP${i+1}: ${esc(wp.name)}</b><br><span style="color:var(--muted);font-size:11px">${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</span><br><span style="color:var(--warn);font-size:11px">▸ ${esc(wp.arrivalAction||'continue')}</span>`);
     mk.on('click',()=>selWP(i));
     mk.on('dragend',e=>{const ll=e.target.getLatLng();wps[i].lat=+ll.lat.toFixed(7);wps[i].lng=+ll.lng.toFixed(7);if(sel===i){document.getElementById('wLa').value=wps[i].lat;document.getElementById('wLg').value=wps[i].lng}redrawMap()});
     wpMks.push(mk);
@@ -719,6 +742,8 @@ document.getElementById('mRt').addEventListener('change',redrawMap);
 
 // ── Library ────────────────────────────────────────────────────────────────
 async function resumeById(id,btn){
+  const chk=await fetch(`/api/missions/${id}`);
+  if(!chk.ok){alert('Mission not found on Jetson — push it first.');return}
   sendCmd(`mission_resume:${id}`);
   const name=btn.closest('tr').querySelector('td').textContent;
   showBanner(name,'ok');
