@@ -45,16 +45,38 @@ Comms::~Comms(){
     stopWebIPC();
 }
 
-// Opens a TCP socket to ip:port with standard timeouts and TCP_NODELAY.
-// Returns the socket FD, or -1 on failure.
+// Opens a TCP socket to ip:port with a 2-second connect timeout and TCP_NODELAY.
+// Returns the socket FD, or -1 on failure. Never hangs indefinitely.
 int Comms::openTcpSocket(const std::string& ip, int port) {
     int s = ::socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) return -1;
+
     sockaddr_in sa{};
     sa.sin_family = AF_INET;
     sa.sin_port   = htons(port);
     if (::inet_pton(AF_INET, ip.c_str(), &sa.sin_addr) <= 0){ ::close(s); return -1; }
-    if (::connect(s, (sockaddr*)&sa, sizeof(sa)) < 0){ ::close(s); return -1; }
+
+    // Non-blocking connect with 2-second timeout so we never hang on startup
+    int flags = ::fcntl(s, F_GETFL, 0);
+    ::fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+    int rc = ::connect(s, (sockaddr*)&sa, sizeof(sa));
+    if (rc < 0 && errno != EINPROGRESS){ ::close(s); return -1; }
+
+    if (rc != 0) {   // EINPROGRESS — wait up to 2 seconds
+        fd_set wset;
+        FD_ZERO(&wset); FD_SET(s, &wset);
+        struct timeval tv{2, 0};
+        int sel = ::select(s + 1, nullptr, &wset, nullptr, &tv);
+        if (sel <= 0){ ::close(s); return -1; }   // timeout or error
+        int err = 0; socklen_t len = sizeof(err);
+        ::getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len);
+        if (err){ ::close(s); return -1; }
+    }
+
+    // Restore blocking mode for normal recv/send
+    ::fcntl(s, F_SETFL, flags);
+
     struct timeval tv{0, 200000};
     setsockopt(s, SOL_SOCKET,  SO_RCVTIMEO,  &tv,  sizeof(tv));
     int flag = 1;
