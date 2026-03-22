@@ -1253,13 +1253,15 @@ bool Comms::startLidar(const std::string& port, int baud) {
         int   lidarType  = TYPE_TRIANGLE;
         int   devType    = YDLIDAR_TYPE_SERIAL;
         bool  isSingle   = true;    // X3 IS single-channel (ydlidar.yaml is for a different model)
+        bool  motorDtr   = true;    // X3 motor is controlled by DTR line — required to start spinning
         int   sampleRate = 3;       // 3kHz
         float scanFreq   = 6.0f;
-        laser.setlidaropt(LidarPropLidarType,     &lidarType,  sizeof(int));
-        laser.setlidaropt(LidarPropDeviceType,    &devType,    sizeof(int));
-        laser.setlidaropt(LidarPropSingleChannel, &isSingle,   sizeof(bool));
-        laser.setlidaropt(LidarPropSampleRate,    &sampleRate, sizeof(int));
-        laser.setlidaropt(LidarPropScanFrequency, &scanFreq,   sizeof(float));
+        laser.setlidaropt(LidarPropLidarType,          &lidarType, sizeof(int));
+        laser.setlidaropt(LidarPropDeviceType,         &devType,   sizeof(int));
+        laser.setlidaropt(LidarPropSingleChannel,      &isSingle,  sizeof(bool));
+        laser.setlidaropt(LidarPropSupportMotorDtrCtrl,&motorDtr,  sizeof(bool));
+        laser.setlidaropt(LidarPropSampleRate,         &sampleRate,sizeof(int));
+        laser.setlidaropt(LidarPropScanFrequency,      &scanFreq,  sizeof(float));
 
         if (!laser.initialize()) {
             LOGE("LIDAR: init failed on " << port);
