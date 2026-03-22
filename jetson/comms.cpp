@@ -2,7 +2,7 @@
 #include "helpers.h"
 #include "config.h"
 #include "object_detection.h"
-#include <src/ydlidar_sdk.h>
+#include <src/CYdLidar.h>
 
 #include <nlohmann/json.hpp>
 
