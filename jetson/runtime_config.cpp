@@ -35,6 +35,9 @@ RuntimeConfig RuntimeConfig::load(const std::string& path) {
         get("wheel_ki",             cfg.wheel_ki);
         get("pixels_per_degree",    cfg.pixels_per_degree);
         get("log_path",             cfg.log_path);
+        get("lidar_port",           cfg.lidar_port);
+        get("lidar_fwd_arc_deg",    cfg.lidar_fwd_arc_deg);
+        get("lidar_obstacle_m",     cfg.lidar_obstacle_m);
 
         LOGI("Config loaded from '" << path << "'");
     } catch (const std::exception& e) {

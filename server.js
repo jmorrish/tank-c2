@@ -1,23 +1,82 @@
 const express = require('express');
+const session = require('express-session');
 const { WebSocketServer } = require('ws');
 const net = require('net');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const JETSON_HOST  = process.env.JETSON_HOST  || '100.91.47.30';
 const JETSON_PORT  = parseInt(process.env.JETSON_PORT  || '9999');
 const MJPEG_PORT   = parseInt(process.env.MJPEG_PORT   || '8080');
 const WEB_PORT     = parseInt(process.env.PORT         || '3000');
 const MISSIONS_DIR = path.join(__dirname, 'missions');
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'changeme';
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 if (!fs.existsSync(MISSIONS_DIR)) fs.mkdirSync(MISSIONS_DIR, { recursive: true });
 
 const app    = express();
 const server = http.createServer(app);
-const wss    = new WebSocketServer({ server });
+const wss    = new WebSocketServer({ noServer: true });
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+app.use(session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 }
+}));
+
+// Short-lived tokens for WebSocket auth (browser requests one via HTTP then
+// uses it in the WS handshake URL, so the WS upgrade can be authenticated
+// without cookies — which aren't reliably sent with WS upgrades cross-origin).
+const wsTokens = new Map(); // token → expiry timestamp
+function issueWsToken() {
+    const tok = crypto.randomBytes(16).toString('hex');
+    wsTokens.set(tok, Date.now() + 30_000); // valid 30 s
+    return tok;
+}
+function validateWsToken(tok) {
+    const exp = wsTokens.get(tok);
+    if (!exp) return false;
+    wsTokens.delete(tok);
+    return Date.now() < exp;
+}
+
+// ── Auth middleware ───────────────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+    if (req.session && req.session.authed) return next();
+    if (req.path === '/login' || req.path === '/login.html') return next();
+    res.redirect('/login');
+}
 
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false }));
+
+// Login / logout routes (before static middleware so they aren't blocked)
+app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
+
+app.post('/login', (req, res) => {
+    if (req.body.password === AUTH_PASSWORD) {
+        req.session.authed = true;
+        return res.redirect('/');
+    }
+    res.redirect('/login?err=1');
+});
+
+app.post('/logout', (req, res) => {
+    req.session.destroy(() => res.redirect('/login'));
+});
+
+// Issue a WS token for authenticated sessions
+app.get('/api/ws-token', requireAuth, (_req, res) => {
+    res.json({ token: issueWsToken() });
+});
+
+// Protect all other routes
+app.use(requireAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── MJPEG relay (one upstream connection → fan-out to all viewers) ───────────
@@ -232,6 +291,9 @@ function connectJetson() {
                     if (parsed.event === 'new_target') {
                         broadcast({ type: 'new_target', target_id: parsed.target_id });
                     }
+                } else if (parsed.type === 'scan') {
+                    // LIDAR scan — forward directly, don't overwrite telemetry cache
+                    broadcast({ type: 'scan', obs: parsed.obs, fwd: parsed.fwd, pts: parsed.pts });
                 } else {
                     lastStatus = parsed;
                     broadcast({ type: 'status', data: lastStatus });
@@ -398,6 +460,18 @@ app.post('/api/missions/abort', (_req, res) => {
         console.warn('[jetson] Abort queued — will send on reconnect');
     }
     res.json({ ok, queued: !ok });
+});
+
+// ── WebSocket upgrade — authenticate via one-time token ───────────────────────
+server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url, `http://localhost`);
+    const tok = url.searchParams.get('tok');
+    if (!tok || !validateWsToken(tok)) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

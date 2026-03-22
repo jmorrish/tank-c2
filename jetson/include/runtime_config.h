@@ -33,6 +33,11 @@ struct RuntimeConfig {
     // Run log output path
     std::string log_path       = "/tmp/robot_run.csv";
 
+    // Lidar
+    std::string lidar_port     = LIDAR_PORT;
+    float lidar_fwd_arc_deg    = LIDAR_FWD_ARC_DEG;
+    float lidar_obstacle_m     = LIDAR_OBSTACLE_M;
+
     // Load from JSON; returns defaults if file is missing or unparseable
     static RuntimeConfig load(const std::string& path);
 };

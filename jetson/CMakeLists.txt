@@ -32,6 +32,10 @@ message(STATUS "TensorRT Headers: ${TensorRT_INCLUDE_DIRS}")
 # --- Threads ---
 find_package(Threads REQUIRED)
 
+# --- YDLidar SDK ---
+find_package(ydlidar_sdk REQUIRED)
+message(STATUS "YDLidar SDK found")
+
 # --- Boost (filesystem) ---
 find_package(Boost REQUIRED COMPONENTS filesystem)
 message(STATUS "Boost Libs: ${Boost_LIBRARIES}")
@@ -85,6 +89,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${ZeroMQ_LIBRARIES}  # NEW: Link ZeroMQ
     Threads::Threads
     atomic
+    ydlidar_sdk
 )
 
 message(STATUS "Included directories: ${INCLUDE_DIRS}")

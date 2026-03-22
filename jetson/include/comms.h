@@ -6,6 +6,8 @@
 #include <optional>
 #include <cmath>
 #include <limits>
+#include <vector>
+#include <utility>
 #include "helpers.h"  // For GPSData and EncoderData
 
 class ObjectDetection;  // fwd
@@ -78,6 +80,12 @@ public:
     // Thread-safe push of a one-shot event line to the web client
     void sendWebEvent(const std::string& json_str);
 
+    // YDLIDAR X3
+    bool startLidar(const std::string& port, int baud);
+    void stopLidar();
+    bool hasObstacle() const { return obstacle_.load(); }
+    float getLatestLidarFwdDist(double* age_ms = nullptr) const;
+
 private:
     // Control TCP
     SocketFd    control_sock_;
@@ -137,6 +145,19 @@ private:
     std::thread web_rxThread_;
     std::atomic<bool> web_rxRun_{false};
     std::mutex web_mtx_;
+
+    // YDLIDAR X3 (separate from Teensy long-range TOF)
+    // tof_dist_ / tof_stamp_ns_ remain owned by the Sensor Teensy (50m single-point).
+    // lidar_fwd_dist_ is the short-range forward arc minimum from the X3 (≤8m).
+    std::thread           lidar_thread_;
+    std::atomic<bool>     lidar_run_{false};
+    std::atomic<bool>     obstacle_{false};
+    std::atomic<float>    lidar_fwd_dist_{-1.0f};
+    std::atomic<int64_t>  lidar_stamp_ns_{0};
+    mutable std::mutex    scan_mtx_;
+    std::vector<std::pair<float,float>> latest_scan_;
+
+    void broadcastScan();
 
     // Mission state
     mutable std::mutex mission_mtx_;

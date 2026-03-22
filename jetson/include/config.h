@@ -11,9 +11,14 @@ static const int         SENSOR_PORT_DEFAULT       = 23;
 // Readings older than this are treated as invalid
 static constexpr double SENSOR_STALE_MS = 500.0;
 
-// --------- TOF Serial ---------
-static const char* TOF_SERIAL_PORT = "/dev/ttyUSB0";
-static const int   TOF_BAUD        = 921600;
+// --------- YDLIDAR X3 ---------
+// Parameters verified from /home/james/test_lidar.py (ydlidar.yaml is for a different model)
+static const char* LIDAR_PORT            = "/dev/ttyUSB0";
+static constexpr int   LIDAR_BAUD        = 128000;      // X3 baud (NOT 230400 — that's a different model)
+static constexpr float LIDAR_FWD_ARC_DEG = 30.0f;      // ±30° forward arc for obstacle check
+static constexpr float LIDAR_OBSTACLE_M  = 0.5f;       // stop if anything < 0.5m in fwd arc
+static constexpr float LIDAR_MAX_RANGE_M = 8.0f;       // X3 max reliable range
+static constexpr int   LIDAR_SCAN_PTS    = 180;        // subsampled points sent to web (~2° resolution)
 
 // --------- PTU PID ---------
 static constexpr float Kp              = 1.5f;

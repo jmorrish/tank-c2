@@ -118,6 +118,17 @@ void Movement::loop(){
             }
         }
 
+        // --- Lidar obstacle check (overrides wheel output) ---
+        if (comms_.hasObstacle()) {
+            if (lastLeft_ != 0 || lastRight_ != 0) {
+                LOGW("[Movement] Obstacle in forward arc — stopping wheels");
+                comms_.sendWheels(0, 0);
+                lastLeft_ = lastRight_ = 0;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
         // --- Wheel follow distance ---
         double dist_age = 0.0;
         float d = comms_.getLatestDistance(&dist_age);

@@ -2,6 +2,7 @@
 #include "helpers.h"
 #include "config.h"
 #include "object_detection.h"
+#include <src/ydlidar_sdk.h>
 
 #include <nlohmann/json.hpp>
 
@@ -42,8 +43,8 @@ Comms::Comms(){}
 Comms::~Comms(){
     closeControl();
     closeSensor();
-    // NEW: Ensure web IPC closes
     stopWebIPC();
+    stopLidar();
 }
 
 // Opens a TCP socket to ip:port with a 2-second connect timeout and TCP_NODELAY.
@@ -556,8 +557,13 @@ std::string Comms::getStatusJson() const {
                      {"stale", eage > STALE_THRESHOLD_MS}};
 
     double dage = 99999.0;
-    j["distance_m"]     = getLatestDistance(&dage);
+    j["distance_m"]      = getLatestDistance(&dage);
     j["distance_age_ms"] = dage;
+
+    double lage = 99999.0;
+    j["lidar_fwd_m"]      = getLatestLidarFwdDist(&lage);
+    j["lidar_fwd_age_ms"] = lage;
+    j["lidar_obstacle"]   = obstacle_.load();
     j["detection_fps"]    = detection_fps_.load();
     j["stream_quality"]   = stream_quality_.load();
     j["target_person_id"] = target_person_id_.load();
@@ -1233,4 +1239,114 @@ void Comms::missionLoop(Comms* self) {
     }
 
     LOGI("Mission executor finished");
+}
+
+// ── YDLIDAR X3 ────────────────────────────────────────────────────────────────
+
+bool Comms::startLidar(const std::string& port, int baud) {
+    if (lidar_run_.exchange(true)) return false;  // already running
+    lidar_thread_ = std::thread([this, port, baud]() {
+        CYdLidar laser;
+        laser.setlidaropt(LidarPropSerialPort,     port.c_str(), port.size());
+        laser.setlidaropt(LidarPropSerialBaudrate, &baud, sizeof(int));
+        // X3-specific parameters (verified from /home/james/test_lidar.py)
+        int   lidarType  = TYPE_TRIANGLE;
+        int   devType    = YDLIDAR_TYPE_SERIAL;
+        bool  isSingle   = true;    // X3 IS single-channel (ydlidar.yaml is for a different model)
+        int   sampleRate = 3;       // 3kHz
+        float scanFreq   = 6.0f;
+        laser.setlidaropt(LidarPropLidarType,     &lidarType,  sizeof(int));
+        laser.setlidaropt(LidarPropDeviceType,    &devType,    sizeof(int));
+        laser.setlidaropt(LidarPropSingleChannel, &isSingle,   sizeof(bool));
+        laser.setlidaropt(LidarPropSampleRate,    &sampleRate, sizeof(int));
+        laser.setlidaropt(LidarPropScanFrequency, &scanFreq,   sizeof(float));
+
+        if (!laser.initialize()) {
+            LOGE("LIDAR: init failed on " << port);
+            lidar_run_.store(false);
+            return;
+        }
+        if (!laser.turnOn()) {
+            LOGE("LIDAR: turnOn failed");
+            lidar_run_.store(false);
+            return;
+        }
+        LOGI("LIDAR: running on " << port);
+
+        LaserScan scan;
+        while (lidar_run_.load()) {
+            if (!laser.doProcessSimple(scan)) continue;
+
+            // 1. Forward arc minimum → lidar_fwd_dist_
+            float min_fwd = LIDAR_MAX_RANGE_M;
+            for (auto& pt : scan.points) {
+                float deg = pt.angle * 180.0f / (float)M_PI;
+                if (deg < 0.0f) deg += 360.0f;
+                bool in_fwd = (deg <= LIDAR_FWD_ARC_DEG) || (deg >= 360.0f - LIDAR_FWD_ARC_DEG);
+                if (in_fwd && pt.range > 0.05f && pt.range < LIDAR_MAX_RANGE_M)
+                    min_fwd = std::min(min_fwd, pt.range);
+            }
+            lidar_fwd_dist_.store(min_fwd < LIDAR_MAX_RANGE_M ? min_fwd : -1.0f);
+            lidar_stamp_ns_.store(now_ns());
+
+            // 2. Obstacle flag
+            obstacle_.store(min_fwd < LIDAR_OBSTACLE_M);
+
+            // 3. Subsample scan for web — LIDAR_SCAN_PTS evenly-spaced points
+            std::vector<std::pair<float,float>> pts;
+            pts.reserve(LIDAR_SCAN_PTS);
+            int step = std::max(1, (int)scan.points.size() / LIDAR_SCAN_PTS);
+            for (int i = 0; i < (int)scan.points.size() && (int)pts.size() < LIDAR_SCAN_PTS; i += step) {
+                float deg = scan.points[i].angle * 180.0f / (float)M_PI;
+                if (deg < 0.0f) deg += 360.0f;
+                float r = scan.points[i].range;
+                pts.push_back({deg, (r > 0.05f && r < LIDAR_MAX_RANGE_M) ? r : 0.0f});
+            }
+            { std::lock_guard<std::mutex> lk(scan_mtx_); latest_scan_ = std::move(pts); }
+
+            // 4. Broadcast scan to web
+            broadcastScan();
+        }
+
+        laser.turnOff();
+        laser.disconnecting();
+        LOGI("LIDAR: stopped");
+    });
+    return true;
+}
+
+void Comms::stopLidar() {
+    lidar_run_.store(false);
+    if (lidar_thread_.joinable()) lidar_thread_.join();
+}
+
+float Comms::getLatestLidarFwdDist(double* age_ms) const {
+    float d = lidar_fwd_dist_.load();
+    if (d < 0.0f) return -1.0f;
+    int64_t stamp = lidar_stamp_ns_.load();
+    if (stamp == 0) return -1.0f;
+    if (age_ms) *age_ms = (now_ns() - stamp) / 1e6;
+    return d;
+}
+
+void Comms::broadcastScan() {
+    std::vector<std::pair<float,float>> pts;
+    { std::lock_guard<std::mutex> lk(scan_mtx_); pts = latest_scan_; }
+    if (pts.empty()) return;
+
+    // Compact JSON: {"type":"scan","obs":bool,"fwd":float,"pts":[[angle,dist],...]}
+    std::string j = "{\"type\":\"scan\",\"obs\":";
+    j += obstacle_.load() ? "true" : "false";
+    char fbuf[32];
+    snprintf(fbuf, sizeof(fbuf), ",\"fwd\":%.2f", lidar_fwd_dist_.load());
+    j += fbuf;
+    j += ",\"pts\":[";
+    for (size_t i = 0; i < pts.size(); ++i) {
+        if (i) j += ',';
+        char buf[32];
+        snprintf(buf, sizeof(buf), "[%.1f,%.2f]", pts[i].first, pts[i].second);
+        j += buf;
+    }
+    j += "]}";
+    sendWebEvent(j);
 }

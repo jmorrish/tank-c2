@@ -86,6 +86,10 @@ int main(int argc, char** argv){
         return 1;
     }
 
+    // Lidar (non-fatal — logs warning if not connected)
+    if (!comms.startLidar(cfg.lidar_port, LIDAR_BAUD))
+        LOGW("LIDAR: failed to start on " << cfg.lidar_port << " — check USB cable");
+
     // Camera index: default 0, override with --cam <n>
     // ObjectDetection's internal loop waits for the camera to appear, so it's
     // safe to start even when nothing is plugged in yet.
