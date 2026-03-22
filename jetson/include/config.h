@@ -14,7 +14,7 @@ static constexpr double SENSOR_STALE_MS = 500.0;
 // --------- YDLIDAR X3 ---------
 // Parameters verified from /home/james/test_lidar.py (ydlidar.yaml is for a different model)
 static const char* LIDAR_PORT            = "/dev/ttyUSB0";
-static constexpr int   LIDAR_BAUD        = 152000;      // X3 baud rate
+static constexpr int   LIDAR_BAUD        = 115200;      // X3 baud rate (verified from working X3.yaml)
 static constexpr float LIDAR_FWD_ARC_DEG = 30.0f;      // ±30° forward arc for obstacle check
 static constexpr float LIDAR_OBSTACLE_M  = 0.5f;       // stop if anything < 0.5m in fwd arc
 static constexpr float LIDAR_MAX_RANGE_M = 8.0f;       // X3 max reliable range

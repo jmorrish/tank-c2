@@ -1250,18 +1250,25 @@ bool Comms::startLidar(const std::string& port, int baud) {
         laser.setlidaropt(LidarPropSerialPort,     port.c_str(), port.size());
         laser.setlidaropt(LidarPropSerialBaudrate, &baud, sizeof(int));
         // X3-specific parameters (verified from /home/james/test_lidar.py)
-        int   lidarType  = TYPE_TRIANGLE;
-        int   devType    = YDLIDAR_TYPE_SERIAL;
-        bool  isSingle   = true;    // X3 IS single-channel (ydlidar.yaml is for a different model)
-        bool  motorDtr   = true;    // X3 motor is controlled by DTR line — required to start spinning
-        int   sampleRate = 3;       // 3kHz
-        float scanFreq   = 6.0f;
-        laser.setlidaropt(LidarPropLidarType,          &lidarType, sizeof(int));
-        laser.setlidaropt(LidarPropDeviceType,         &devType,   sizeof(int));
-        laser.setlidaropt(LidarPropSingleChannel,      &isSingle,  sizeof(bool));
-        laser.setlidaropt(LidarPropSupportMotorDtrCtrl,&motorDtr,  sizeof(bool));
-        laser.setlidaropt(LidarPropSampleRate,         &sampleRate,sizeof(int));
-        laser.setlidaropt(LidarPropScanFrequency,      &scanFreq,  sizeof(float));
+        // All params verified from working X3.yaml (ROS2 driver, tested Oct-Dec 2025)
+        int   lidarType   = TYPE_TRIANGLE;
+        int   devType     = YDLIDAR_TYPE_SERIAL;
+        bool  isSingle    = true;
+        bool  motorDtr    = true;   // X3 motor controlled by DTR line
+        bool  fixedRes    = true;   // required for stable scan frequency
+        int   sampleRate  = 3;      // 3kHz
+        float scanFreq    = 10.0f;  // 10 Hz
+        float rangeMin    = 0.1f;   // X3 min reliable range (metres)
+        float rangeMax    = 12.0f;
+        laser.setlidaropt(LidarPropLidarType,          &lidarType,  sizeof(int));
+        laser.setlidaropt(LidarPropDeviceType,         &devType,    sizeof(int));
+        laser.setlidaropt(LidarPropSingleChannel,      &isSingle,   sizeof(bool));
+        laser.setlidaropt(LidarPropSupportMotorDtrCtrl,&motorDtr,   sizeof(bool));
+        laser.setlidaropt(LidarPropFixedResolution,    &fixedRes,   sizeof(bool));
+        laser.setlidaropt(LidarPropSampleRate,         &sampleRate, sizeof(int));
+        laser.setlidaropt(LidarPropScanFrequency,      &scanFreq,   sizeof(float));
+        laser.setlidaropt(LidarPropMinRange,           &rangeMin,   sizeof(float));
+        laser.setlidaropt(LidarPropMaxRange,           &rangeMax,   sizeof(float));
 
         if (!laser.initialize()) {
             LOGE("LIDAR: init failed on " << port);
@@ -1285,7 +1292,7 @@ bool Comms::startLidar(const std::string& port, int baud) {
                 float deg = pt.angle * 180.0f / (float)M_PI;
                 if (deg < 0.0f) deg += 360.0f;
                 bool in_fwd = (deg <= LIDAR_FWD_ARC_DEG) || (deg >= 360.0f - LIDAR_FWD_ARC_DEG);
-                if (in_fwd && pt.range > 0.05f && pt.range < LIDAR_MAX_RANGE_M)
+                if (in_fwd && pt.range > 0.1f && pt.range < LIDAR_MAX_RANGE_M)
                     min_fwd = std::min(min_fwd, pt.range);
             }
             lidar_fwd_dist_.store(min_fwd < LIDAR_MAX_RANGE_M ? min_fwd : -1.0f);
