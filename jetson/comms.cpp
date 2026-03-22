@@ -92,7 +92,7 @@ bool Comms::connectControl(const std::string& ip, int port){
         LOGE("connectControl failed to " << ip << ":" << port << " errno=" << errno);
         return false;
     }
-    control_sock_ = s;
+    control_sock_ = SocketFd(s);
     control_ip_   = ip;
     control_port_ = port;
     LOGI("Connected to control " << ip << ":" << port << " for PTU/wheels.");
@@ -108,7 +108,7 @@ bool Comms::connectSensor(const std::string& ip, int port){
         LOGE("connectSensor failed to " << ip << ":" << port << " errno=" << errno);
         return false;
     }
-    sensor_sock_ = s;
+    sensor_sock_ = SocketFd(s);
     sensor_ip_   = ip;
     sensor_port_ = port;
     LOGI("Connected to sensor " << ip << ":" << port << " for IMU/GPS/encoders.");
@@ -123,20 +123,14 @@ void Comms::closeControl(){
     if (control_rxRun_.exchange(false)){
         if (control_rxThread_.joinable()) control_rxThread_.join();
     }
-    if (control_sock_ >= 0){
-        ::close(control_sock_);
-        control_sock_ = -1;
-    }
+    control_sock_.close();
 }
 
 void Comms::closeSensor(){
     if (sensor_rxRun_.exchange(false)){
         if (sensor_rxThread_.joinable()) sensor_rxThread_.join();
     }
-    if (sensor_sock_ >= 0){
-        ::close(sensor_sock_);
-        sensor_sock_ = -1;
-    }
+    sensor_sock_.close();
 }
 
 bool Comms::sendLine(int sock, std::mutex& mtx, const std::string& label, const std::string& line){
@@ -273,14 +267,14 @@ void Comms::controlRxLoop(Comms* self){
 
         // Reconnect with 2 s backoff
         { std::lock_guard<std::mutex> lk(self->control_send_mtx_);
-          ::close(self->control_sock_); self->control_sock_ = -1; }
+          self->control_sock_.close(); }
         while (self->control_rxRun_.load()){
             LOGW("Control disconnected — reconnecting in 2 s...");
             std::this_thread::sleep_for(std::chrono::seconds(2));
             int s = openTcpSocket(self->control_ip_, self->control_port_);
             if (s < 0) continue;
             { std::lock_guard<std::mutex> lk(self->control_send_mtx_);
-              self->control_sock_ = s; }
+              self->control_sock_ = SocketFd(s); }
             LOGI("Control reconnected to " << self->control_ip_ << ":" << self->control_port_);
             break;
         }
@@ -419,14 +413,14 @@ void Comms::sensorRxLoop(Comms* self){
 
         // Reconnect with 2 s backoff; re-enable IMU on success
         { std::lock_guard<std::mutex> lk(self->sensor_send_mtx_);
-          ::close(self->sensor_sock_); self->sensor_sock_ = -1; }
+          self->sensor_sock_.close(); }
         while (self->sensor_rxRun_.load()){
             LOGW("Sensor disconnected — reconnecting in 2 s...");
             std::this_thread::sleep_for(std::chrono::seconds(2));
             int s = openTcpSocket(self->sensor_ip_, self->sensor_port_);
             if (s < 0) continue;
             { std::lock_guard<std::mutex> lk(self->sensor_send_mtx_);
-              self->sensor_sock_ = s; }
+              self->sensor_sock_ = SocketFd(s); }
             LOGI("Sensor reconnected to " << self->sensor_ip_ << ":" << self->sensor_port_);
             self->imuOn();
             self->imuRate(50.0f);
@@ -437,8 +431,8 @@ void Comms::sensorRxLoop(Comms* self){
 
 // Web IPC implementation
 bool Comms::startWebIPC(int port) {
-    web_sock_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (web_sock_ < 0) { LOGE("Web IPC socket failed"); return false; }
+    web_sock_ = SocketFd(::socket(AF_INET, SOCK_STREAM, 0));
+    if (!web_sock_.valid()) { LOGE("Web IPC socket failed"); return false; }
 
     int opt = 1;
     setsockopt(web_sock_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -450,11 +444,11 @@ bool Comms::startWebIPC(int port) {
 
     if (::bind(web_sock_, (sockaddr*)&sa, sizeof(sa)) < 0) {
         LOGE("Web IPC bind failed: " << strerror(errno));
-        ::close(web_sock_); web_sock_ = -1; return false;
+        web_sock_.close(); return false;
     }
     if (::listen(web_sock_, 1) < 0) {
         LOGE("Web IPC listen failed");
-        ::close(web_sock_); web_sock_ = -1; return false;
+        web_sock_.close(); return false;
     }
 
     web_rxRun_.store(true);
@@ -526,7 +520,7 @@ void Comms::stopWebIPC() {
         if (mission_thread_.joinable()) mission_thread_.join();
 
     web_rxRun_.store(false);
-    if (web_sock_ >= 0) { ::close(web_sock_); web_sock_ = -1; }
+    web_sock_.close();
     if (web_rxThread_.joinable()) web_rxThread_.join();
 }
 

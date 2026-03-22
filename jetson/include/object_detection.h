@@ -17,6 +17,7 @@ class Comms; // fwd
 struct PersonRecord {
     int id = -1;
     std::vector<float> embedding;   // normalised 512-dim EMA feature
+    int best_thumb_area = 0;        // pixel area of best saved thumbnail crop
 };
 
 class ObjectDetection {
@@ -65,6 +66,12 @@ private:
     cv::Mat frame2_;
     std::atomic<bool> rtsp_run_{false};
 
+    // Protects gallery_, next_id_, and best_thumb_area in PersonRecord.
+    // All gallery accesses happen on the mainLoop thread today, but this
+    // guards against future refactoring that moves gallery access to other
+    // threads (e.g. web API reads).
+    mutable std::mutex gallery_mtx_;
+
     // UI
     std::string window_ = "YOLOv8 + BoTSORT + PTU";
 
@@ -82,12 +89,10 @@ private:
 
     // ── Cross-session target gallery ──────────────────────────────────────────
     static constexpr float GALLERY_MATCH_THRESH  = 0.75f;
-    static constexpr int   THUMB_UPDATE_INTERVAL = 60;   // frames between thumbnail saves
 
     std::vector<PersonRecord> gallery_;
     std::map<int, int> track_to_person_;  // session track_id → gallery person_id
     int next_id_               = 1;
     int active_target_person_id_ = -1;   // gallery person we're currently following
     std::atomic<int> pending_target_person_{-2};  // -2=no change, ≥-1=requested switch
-    int thumb_frame_counter_   = 0;
 };

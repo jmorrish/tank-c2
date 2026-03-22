@@ -44,11 +44,13 @@ void Movement::loop(){
         if (!opt || !opt->valid){
             if (std::fabs(lastPanVelo_) > 1e-2f || std::fabs(lastTiltVelo_) > 1e-2f){
                 LOGI("[PTU] Person lost => zero velocity");
-                comms_.sendPTUVelocity(0,0);
+                if (!comms_.sendPTUVelocity(0,0) && control_ok_)
+                    LOGW("[Movement] sendPTUVelocity failed — control socket down?");
                 lastPanVelo_ = 0.0f; lastTiltVelo_ = 0.0f;
             }
             if (lastLeft_ != 0 || lastRight_ != 0){
-                comms_.sendWheels(0,0);
+                if (!comms_.sendWheels(0,0) && control_ok_)
+                    LOGW("[Movement] sendWheels failed — control socket down?");
                 lastLeft_ = lastRight_ = 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -74,7 +76,8 @@ void Movement::loop(){
         if (dist_pix <= CENTER_THRESHOLD){
             if (std::fabs(lastPanVelo_) > 1e-2f || std::fabs(lastTiltVelo_) > 1e-2f){
                 LOGI("[PTU] Centered => zero velocity");
-                comms_.sendPTUVelocity(0,0);
+                if (!comms_.sendPTUVelocity(0,0) && control_ok_)
+                    LOGW("[Movement] sendPTUVelocity failed — control socket down?");
                 lastPanVelo_ = 0.0f; lastTiltVelo_ = 0.0f;
             }
         } else {
@@ -106,7 +109,10 @@ void Movement::loop(){
             if (shouldSend){
                 LOGI("[PTU] dx=" << dx << ", dy=" << dy
                      << ", panVel=" << panVel << ", tiltVel=" << tiltVel);
-                comms_.sendPTUVelocity(panVel, tiltVel);
+                bool ok = comms_.sendPTUVelocity(panVel, tiltVel);
+                if (!ok && control_ok_)  LOGW("[Movement] sendPTUVelocity failed — control socket down?");
+                if ( ok && !control_ok_) LOGI("[Movement] Control socket recovered");
+                control_ok_ = ok;
                 lastPanVelo_  = panVel;
                 lastTiltVelo_ = tiltVel;
             }
@@ -139,7 +145,10 @@ void Movement::loop(){
         right = std::clamp(right, -WHEEL_MAX_SPS, WHEEL_MAX_SPS);
 
         if (left != lastLeft_ || right != lastRight_){
-            comms_.sendWheels(left, right);
+            bool ok = comms_.sendWheels(left, right);
+            if (!ok && control_ok_)  LOGW("[Movement] sendWheels failed — control socket down?");
+            if ( ok && !control_ok_) LOGI("[Movement] Control socket recovered");
+            control_ok_ = ok;
             lastLeft_ = left; lastRight_ = right;
         }
 
@@ -156,6 +165,6 @@ void Movement::loop(){
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
-    comms_.sendPTUVelocity(0,0);
-    comms_.sendWheels(0,0);
+    if (!comms_.sendPTUVelocity(0,0)) LOGW("[Movement] sendPTUVelocity failed on shutdown");
+    if (!comms_.sendWheels(0,0))     LOGW("[Movement] sendWheels failed on shutdown");
 }

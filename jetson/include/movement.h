@@ -44,4 +44,8 @@ private:
     RunLogger logger_;
 
     std::chrono::steady_clock::time_point tprev_ = std::chrono::steady_clock::now();
+
+    // Tracks whether the last send to the Control Teensy succeeded.
+    // Used to suppress repeated WARN spam on the hot path — only logs on transition.
+    bool control_ok_ = true;
 };

@@ -80,7 +80,7 @@ public:
 
 private:
     // Control TCP
-    int         control_sock_ = -1;
+    SocketFd    control_sock_;
     std::string control_ip_;
     int         control_port_ = 0;
     std::thread control_rxThread_;
@@ -88,7 +88,7 @@ private:
     std::mutex  control_send_mtx_;
 
     // Sensor TCP
-    int         sensor_sock_ = -1;
+    SocketFd    sensor_sock_;
     std::string sensor_ip_;
     int         sensor_port_ = 0;
     std::thread sensor_rxThread_;
@@ -130,7 +130,9 @@ private:
     std::atomic<int> mode_{0};   // ControlMode::FOLLOW by default
 
     // Web IPC
-    int web_sock_ = -1;
+    SocketFd          web_sock_;
+    // web_client_ stays atomic<int> — it crosses thread boundaries atomically
+    // and SocketFd is not trivially copyable, so atomic<SocketFd> isn't viable.
     std::atomic<int>  web_client_{-1};  // fd of the currently-connected VPS client (-1 = none)
     std::thread web_rxThread_;
     std::atomic<bool> web_rxRun_{false};

@@ -153,11 +153,14 @@ void ObjectDetection::loadGallery(){
         rec.embedding.resize(FEATURE_DIM);
         ef.read(reinterpret_cast<char*>(rec.embedding.data()),
                 sizeof(float) * FEATURE_DIM);
-        if ((size_t)ef.gcount() == sizeof(float) * FEATURE_DIM)
+        if ((size_t)ef.gcount() == sizeof(float) * FEATURE_DIM) {
+            std::lock_guard<std::mutex> lk(gallery_mtx_);
             gallery_.push_back(std::move(rec));
+        }
     }
     ::closedir(dir);
 
+    std::lock_guard<std::mutex> lk(gallery_mtx_);
     LOGI("Gallery loaded: " << gallery_.size() << " person(s) from " << TARGETS_DIR);
 }
 
@@ -185,6 +188,8 @@ int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
     if (n < 1e-8f) return -1;
     std::vector<float> feat(raw_feat.size());
     for (size_t i = 0; i < raw_feat.size(); ++i) feat[i] = raw_feat[i] / n;
+
+    std::lock_guard<std::mutex> lk(gallery_mtx_);
 
     // Find best gallery match
     float best_sim = -1.0f;
@@ -358,6 +363,7 @@ void ObjectDetection::mainLoop(){
 
             // Level 2: direct cosine similarity against saved embedding
             if (!haveBest && active_target_person_id_ >= 0) {
+                std::lock_guard<std::mutex> lk(gallery_mtx_);
                 for (auto& rec : gallery_) {
                     if (rec.id != active_target_person_id_) continue;
                     float bestSim = GALLERY_MATCH_THRESH - 0.01f;
@@ -423,21 +429,31 @@ void ObjectDetection::mainLoop(){
             cv::line(frame, {cx,cy-cs}, {cx,cy+cs}, {0,200,255}, 1);
         }
 
-        // ── Save thumbnails periodically ─────────────────────────────────────
-        ++thumb_frame_counter_;
-        if (thumb_frame_counter_ >= THUMB_UPDATE_INTERVAL) {
-            thumb_frame_counter_ = 0;
-            for (auto& tr : tracks) {
-                auto it = track_to_person_.find(tr->track_id);
-                if (it == track_to_person_.end()) continue;
-                auto tlwh = tr->get_tlwh();
-                int x = std::max(0, (int)tlwh[0]);
-                int y = std::max(0, (int)tlwh[1]);
-                int w = std::min((int)tlwh[2], frame.cols - x);
-                int h = std::min((int)tlwh[3], frame.rows - y);
-                if (w > 10 && h > 10)
-                    saveThumbnail(it->second, frame(cv::Rect(x, y, w, h)).clone());
+        // ── Save thumbnails: first sighting or crop is ≥25% larger than best ──
+        for (auto& tr : tracks) {
+            auto it = track_to_person_.find(tr->track_id);
+            if (it == track_to_person_.end()) continue;
+            auto tlwh = tr->get_tlwh();
+            int x = std::max(0, (int)tlwh[0]);
+            int y = std::max(0, (int)tlwh[1]);
+            int w = std::min((int)tlwh[2], frame.cols - x);
+            int h = std::min((int)tlwh[3], frame.rows - y);
+            if (w <= 10 || h <= 10) continue;
+            int area = w * h;
+            // Find the gallery record to compare areas
+            int pid = it->second;
+            bool shouldSave = false;
+            {
+                std::lock_guard<std::mutex> lk(gallery_mtx_);
+                auto git = std::find_if(gallery_.begin(), gallery_.end(),
+                                        [pid](const PersonRecord& r){ return r.id == pid; });
+                if (git != gallery_.end() && area > git->best_thumb_area * 5 / 4) {
+                    git->best_thumb_area = area;  // update under lock
+                    shouldSave = true;
+                }
             }
+            if (shouldSave)
+                saveThumbnail(pid, frame(cv::Rect(x, y, w, h)).clone());  // file I/O outside lock
         }
 
         // ── Publish target ───────────────────────────────────────────────────

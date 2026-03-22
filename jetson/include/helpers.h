@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <queue>
 #include <vector>
+#include <unistd.h>
 #include <Eigen/Dense>
 
 #define LOGI(msg) std::cout << "[INFO] " << msg << std::endl
@@ -133,4 +134,34 @@ struct EncoderData {
     int left = 0;
     int right = 0;
     bool valid = false;
+};
+
+// -----------------------------------------------------------------------
+// RAII wrapper for POSIX socket / file descriptors.
+// Move-only — no copies of fd ownership.
+// Usage:
+//   SocketFd fd(::socket(...));
+//   if (!fd.valid()) ...
+//   fd.close();   // explicit early close
+//   int raw = fd; // implicit conversion for syscalls (recv, send, etc.)
+// -----------------------------------------------------------------------
+struct SocketFd {
+    int fd = -1;
+
+    SocketFd() = default;
+    explicit SocketFd(int f) : fd(f) {}
+    ~SocketFd() { if (fd >= 0) { ::close(fd); fd = -1; } }
+
+    SocketFd(SocketFd&& o) noexcept : fd(o.fd) { o.fd = -1; }
+    SocketFd& operator=(SocketFd&& o) noexcept {
+        if (this != &o) { if (fd >= 0) ::close(fd); fd = o.fd; o.fd = -1; }
+        return *this;
+    }
+    SocketFd(const SocketFd&)            = delete;
+    SocketFd& operator=(const SocketFd&) = delete;
+
+    bool valid()   const { return fd >= 0; }
+    void close()         { if (fd >= 0) { ::close(fd); fd = -1; } }
+    int  release()       { int tmp = fd; fd = -1; return tmp; }
+    operator int() const { return fd; }
 };
