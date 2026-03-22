@@ -556,24 +556,45 @@ function updateRadar(msg){
   if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const cx=canvas.width/2,cy=canvas.height/2;
-  const scale=cx/8.0;
+
+  // Auto-scale: find furthest valid point, round up to nearest 0.5m, min 1.5m
+  const pts=msg.pts||[];
+  let maxDist=0;
+  for(const[,d]of pts) if(d>0) maxDist=Math.max(maxDist,d);
+  const range=Math.max(1.5, Math.ceil(maxDist*2)/2);  // round up to nearest 0.5m
+  const scale=cx/range;
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Range rings at 25/50/75/100% of current range, labelled
   ctx.strokeStyle='#1f2937';ctx.lineWidth=1;
-  [2,4,6,8].forEach(r=>{ctx.beginPath();ctx.arc(cx,cy,r*scale,0,Math.PI*2);ctx.stroke();});
+  ctx.fillStyle='#4b5563';ctx.font='8px monospace';ctx.textAlign='center';
+  [0.25,0.5,0.75,1.0].forEach(frac=>{
+    const r=frac*range, px=r*scale;
+    ctx.beginPath();ctx.arc(cx,cy,px,0,Math.PI*2);ctx.stroke();
+    ctx.fillText(r.toFixed(1)+'m', cx, cy-px-2);
+  });
+
+  // Forward arc highlight
   const arcRad=30*Math.PI/180;
   ctx.fillStyle='rgba(0,230,118,0.05)';
   ctx.beginPath();ctx.moveTo(cx,cy);
   ctx.arc(cx,cy,cx,-Math.PI/2-arcRad,-Math.PI/2+arcRad);
   ctx.closePath();ctx.fill();
+
+  // Scan points
   ctx.fillStyle=msg.obs?'#ff1744':'#00e676';
-  for(const[a,d]of(msg.pts||[])){
+  for(const[a,d]of pts){
     if(d<=0)continue;
     const rad=(a-90)*Math.PI/180;
     const px=cx+Math.cos(rad)*d*scale,py=cy+Math.sin(rad)*d*scale;
     ctx.beginPath();ctx.arc(px,py,1.5,0,Math.PI*2);ctx.fill();
   }
+
+  // Robot dot
   ctx.fillStyle='#00b0ff';
   ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+
   const fwdEl=document.getElementById('lidarFwd');
   const obsEl=document.getElementById('obstBadge');
   if(fwdEl){fwdEl.textContent=msg.fwd>0?f(msg.fwd,2)+' m':'—';fwdEl.style.color=msg.obs?'var(--danger)':'var(--accent)';}
