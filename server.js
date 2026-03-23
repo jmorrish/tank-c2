@@ -6,6 +6,12 @@ const path = require('path');
 const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const anthropic = process.env.ANTHROPIC_API_KEY
+    ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    : null;
+if (!anthropic) console.warn('[learn] ANTHROPIC_API_KEY not set — AI descriptions disabled');
 
 const JETSON_HOST  = process.env.JETSON_HOST  || '100.91.47.30';
 const JETSON_PORT  = parseInt(process.env.JETSON_PORT  || '9999');
@@ -147,6 +153,88 @@ function startMjpegRelay() {
 }
 startMjpegRelay();
 
+// ── Depth stream relay (stereo_depth_zmq → mjpeg_bridge /depth_stream) ───────
+const depthStreamClients = new Set();
+let   latestDepthFrame   = null;
+let   depthRelayOnline   = false;
+
+function dropDepthStreamClients() {
+    for (const res of depthStreamClients) { try { res.end(); } catch (_) {} }
+    depthStreamClients.clear();
+}
+function pushDepthFrame(jpeg) {
+    latestDepthFrame = jpeg;
+    const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`;
+    for (const res of depthStreamClients) {
+        try { res.write(header); res.write(jpeg); res.write('\r\n'); }
+        catch (_) { depthStreamClients.delete(res); }
+    }
+}
+function startDepthRelay() {
+    let buf = Buffer.alloc(0);
+    const req = http.get(
+        `http://${JETSON_HOST}:${MJPEG_PORT}/depth_stream`,
+        { timeout: 8000 },
+        (upstream) => {
+            // Clear idle timeout once connected — stream may be silent when stereo is off
+            upstream.socket && upstream.socket.setTimeout(0);
+            depthRelayOnline = true;
+            upstream.on('data', chunk => {
+                buf = Buffer.concat([buf, chunk]);
+                while (true) {
+                    const hEnd = buf.indexOf('\r\n\r\n');
+                    if (hEnd < 0) break;
+                    const header   = buf.slice(0, hEnd).toString();
+                    const lenMatch = header.match(/Content-Length:\s*(\d+)/i);
+                    if (!lenMatch) { buf = buf.slice(hEnd + 4); break; }
+                    const frameLen   = parseInt(lenMatch[1]);
+                    const frameStart = hEnd + 4;
+                    const frameEnd   = frameStart + frameLen;
+                    if (buf.length < frameEnd) break;
+                    pushDepthFrame(buf.slice(frameStart, frameEnd));
+                    buf = buf.slice(frameEnd);
+                }
+            });
+            const done = () => {
+                depthRelayOnline = false; latestDepthFrame = null;
+                dropDepthStreamClients();
+                setTimeout(startDepthRelay, 3000);
+            };
+            upstream.on('end',   done);
+            upstream.on('error', done);
+        }
+    );
+    req.on('timeout', () => req.destroy());
+    req.on('error',   () => {
+        depthRelayOnline = false; latestDepthFrame = null;
+        dropDepthStreamClients();
+        setTimeout(startDepthRelay, 3000);
+    });
+}
+startDepthRelay();
+
+app.get('/depth_stream', (req, res) => {
+    if (!depthRelayOnline) return res.status(503).end();
+    res.writeHead(200, {
+        'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
+        'Cache-Control': 'no-cache, no-store',
+        'Connection':    'keep-alive',
+    });
+    if (latestDepthFrame) {
+        res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestDepthFrame.length}\r\n\r\n`);
+        res.write(latestDepthFrame);
+        res.write('\r\n');
+    }
+    depthStreamClients.add(res);
+    req.on('close', () => depthStreamClients.delete(res));
+});
+
+app.get('/depth_snapshot', (req, res) => {
+    if (!latestDepthFrame) return res.status(503).end();
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
+    res.end(latestDepthFrame);
+});
+
 // MJPEG stream for Chrome/Firefox/Android — returns 503 immediately if offline
 app.get('/stream', (req, res) => {
     if (!relayOnline) return res.status(503).end();
@@ -209,6 +297,15 @@ app.get('/snapshot', (req, res) => {
 let jetsonSocket    = null;
 let jetsonBuffer    = '';
 let lastStatus      = null;
+let lastSlamMap     = null;
+const DESCRIPTIONS_FILE = path.join(__dirname, 'descriptions.json');
+const targetDescriptions = new Map(); // person_id → description string
+// Load persisted descriptions from disk
+try {
+    const saved = JSON.parse(fs.readFileSync(DESCRIPTIONS_FILE, 'utf8'));
+    for (const [k, v] of Object.entries(saved)) targetDescriptions.set(Number(k), v);
+    console.log(`[learn] Loaded ${targetDescriptions.size} saved description(s)`);
+} catch (_) { /* first run or missing file — fine */ }
 let jetsonOnline    = false;
 let jetsonReconnecting = false;
 const CONNECT_TIMEOUT_MS = 8000;
@@ -291,9 +388,20 @@ function connectJetson() {
                     if (parsed.event === 'new_target') {
                         broadcast({ type: 'new_target', target_id: parsed.target_id });
                     }
+                    if (parsed.event === 'learn_progress') {
+                        broadcast({ type: 'learn_progress', target_id: parsed.target_id,
+                                    count: parsed.count, total: parsed.total });
+                    }
                 } else if (parsed.type === 'scan') {
                     // LIDAR scan — forward directly, don't overwrite telemetry cache
                     broadcast({ type: 'scan', obs: parsed.obs, fwd: parsed.fwd, pts: parsed.pts });
+                } else if (parsed.type === 'slam_map') {
+                    // Occupancy grid PNG — cache so new connections get the current map
+                    lastSlamMap = parsed;
+                    broadcast(parsed);
+                } else if (parsed.type === 'learn_crops') {
+                    // Appearance crops from Jetson — call Claude for description
+                    callClaudeDescription(parsed.target_id, parsed.crops);
                 } else {
                     lastStatus = parsed;
                     broadcast({ type: 'status', data: lastStatus });
@@ -308,7 +416,8 @@ function connectJetson() {
             console.log('[jetson] Disconnected');
             broadcast({ type: 'connection', status: 'disconnected' });
             // Clear stale telemetry so reconnecting clients don't see stale data
-            lastStatus = null;
+            lastStatus  = null;
+            lastSlamMap = null;
             broadcast({ type: 'status', data: null });
         }
         jetsonOnline  = false;
@@ -321,6 +430,47 @@ function connectJetson() {
         console.error('[jetson] Socket error:', err.message);
         sock.destroy();   // triggers 'close'
     });
+}
+
+// ── AI appearance description ─────────────────────────────────────────────────
+async function callClaudeDescription(target_id, crops) {
+    if (!crops || !crops.length) {
+        broadcast({ type: 'learn_status', target_id, status: 'error', message: 'No crops collected' });
+        return;
+    }
+    if (!anthropic) {
+        broadcast({ type: 'learn_status', target_id, status: 'error', message: 'API key not configured' });
+        return;
+    }
+    console.log(`[learn] Sending ${crops.length} crops for person ${target_id} to Claude`);
+    broadcast({ type: 'learn_status', target_id, status: 'analysing', count: crops.length });
+    try {
+        const content = [
+            ...crops.map(b64 => ({
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: b64 }
+            })),
+            {
+                type: 'text',
+                text: 'Describe the appearance of the person in these images. Focus on: clothing (colours, styles, any logos or patterns), hair (colour, length, style), build, and any accessories such as bags, hats, glasses, or lanyards. Be specific and concise — 2-3 sentences.'
+            }
+        ];
+        const response = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{ role: 'user', content }]
+        });
+        const description = response.content[0].text.trim();
+        targetDescriptions.set(target_id, description);
+        // Persist to disk so descriptions survive server restarts
+        const obj = Object.fromEntries(targetDescriptions);
+        fs.writeFile(DESCRIPTIONS_FILE, JSON.stringify(obj, null, 2), () => {});
+        console.log(`[learn] Person ${target_id}: ${description}`);
+        broadcast({ type: 'target_description', target_id, description });
+    } catch (err) {
+        console.error('[learn] Claude API error:', err.message);
+        broadcast({ type: 'learn_status', target_id, status: 'error', message: err.message });
+    }
 }
 
 // ── WebSocket ping/pong to drop stale browser connections quickly ──────────────
@@ -343,7 +493,10 @@ wss.on('connection', (ws) => {
     wsAlive.set(ws, true);
     ws.on('pong', heartbeat.bind(ws));
     ws.send(JSON.stringify({ type: 'connection', status: jetsonOnline ? 'connected' : 'disconnected' }));
-    if (lastStatus) ws.send(JSON.stringify({ type: 'status', data: lastStatus }));
+    if (lastStatus)  ws.send(JSON.stringify({ type: 'status', data: lastStatus }));
+    if (lastSlamMap) ws.send(JSON.stringify(lastSlamMap));
+    for (const [tid, desc] of targetDescriptions)
+        ws.send(JSON.stringify({ type: 'target_description', target_id: tid, description: desc }));
     ws.on('message', (raw) => {
         try {
             const { cmd } = JSON.parse(raw);
@@ -427,9 +580,8 @@ app.post('/api/missions/:id/push', (req, res) => {
     const fp = missionFile(req.params.id);
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     const mission = JSON.parse(fs.readFileSync(fp));
-    // JSON.stringify with no indent argument never emits literal newlines in its
-    // output — user-typed newlines in string fields are escaped as \n (two chars),
-    // so the Jetson's newline-delimited parser always sees exactly one line here.
+    // Allow caller to supply route-expanded waypoints without overwriting the saved file
+    if (req.body && Array.isArray(req.body.waypoints)) mission.waypoints = req.body.waypoints;
     const ok = sendToJetson(`mission_save:${JSON.stringify(mission)}`);
     broadcast({ type: 'mission_status', event: 'pushed', missionId: mission.id, name: mission.name });
     res.json({ ok });
@@ -439,9 +591,82 @@ app.post('/api/missions/:id/execute', (req, res) => {
     const fp = missionFile(req.params.id);
     if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
     const mission = JSON.parse(fs.readFileSync(fp));
+    // Allow caller to supply route-expanded waypoints without overwriting the saved file
+    if (req.body && Array.isArray(req.body.waypoints)) mission.waypoints = req.body.waypoints;
     const ok = sendToJetson(`mission_start:${JSON.stringify(mission)}`);
     broadcast({ type: 'mission_status', event: 'executing', missionId: mission.id, name: mission.name });
     res.json({ ok });
+});
+
+// ── Road routing via OSRM ─────────────────────────────────────────────────────
+function fetchJson(url) {
+    return new Promise((resolve, reject) => {
+        const mod = url.startsWith('https') ? require('https') : require('http');
+        const req = mod.get(url, { headers: { 'User-Agent': 'tank-c2/1.0' } }, res => {
+            let d = '';
+            res.on('data', c => d += c);
+            res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+        });
+        req.on('error', reject);
+        req.setTimeout(10000, () => req.destroy(new Error('OSRM timeout')));
+    });
+}
+
+// Ramer-Douglas-Peucker simplification (degree units)
+function rdpSimplify(pts, eps) {
+    if (pts.length <= 2) return pts;
+    let maxD = 0, maxI = 0;
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    const dx = b.lng - a.lng, dy = b.lat - a.lat;
+    const len2 = dx*dx + dy*dy;
+    for (let i = 1; i < pts.length - 1; i++) {
+        const t = len2 ? Math.max(0, Math.min(1, ((pts[i].lng-a.lng)*dx + (pts[i].lat-a.lat)*dy) / len2)) : 0;
+        const d = Math.hypot(pts[i].lng - a.lng - t*dx, pts[i].lat - a.lat - t*dy);
+        if (d > maxD) { maxD = d; maxI = i; }
+    }
+    if (maxD > eps) {
+        return [...rdpSimplify(pts.slice(0, maxI+1), eps).slice(0,-1),
+                ...rdpSimplify(pts.slice(maxI), eps)];
+    }
+    return [a, b];
+}
+
+// Ensure no segment longer than maxDeg degrees (~45m at equator per 0.0004°)
+function densify(pts, maxDeg) {
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i-1], b = pts[i];
+        const d = Math.hypot(b.lat-a.lat, b.lng-a.lng);
+        if (d > maxDeg) {
+            const n = Math.ceil(d / maxDeg);
+            for (let j = 1; j < n; j++)
+                out.push({ lat: a.lat+(b.lat-a.lat)*j/n, lng: a.lng+(b.lng-a.lng)*j/n });
+        }
+        out.push(b);
+    }
+    return out;
+}
+
+app.post('/api/route', async (req, res) => {
+    const { points, profile = 'foot' } = req.body || {};
+    if (!points || points.length < 2) return res.status(400).json({ error: 'Need ≥2 points' });
+    // Map UI profile names to OSRM profiles
+    const osrmProfile = profile === 'car' ? 'driving' : 'foot';
+    const coords = points.map(p => `${p.lng},${p.lat}`).join(';');
+    const url = `http://router.project-osrm.org/route/v1/${osrmProfile}/${coords}?overview=full&geometries=geojson`;
+    try {
+        const data = await fetchJson(url);
+        if (data.code !== 'Ok' || !data.routes?.length)
+            return res.status(400).json({ error: 'No route found' });
+        const raw = data.routes[0].geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+        // Simplify (keep bends ≥3m) then densify (max 45m between points)
+        const simplified = rdpSimplify(raw, 0.00003);
+        const final = densify(simplified, 0.0004);
+        res.json({ points: final, distance: data.routes[0].distance, duration: data.routes[0].duration });
+    } catch (err) {
+        console.error('[route]', err.message);
+        res.status(502).json({ error: err.message });
+    }
 });
 
 app.post('/api/missions/abort', (_req, res) => {

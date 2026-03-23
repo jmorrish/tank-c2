@@ -1,0 +1,15 @@
+slam_toolbox:
+  ros__parameters:
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    use_odometry: false
+    minimum_travel_distance: 0.0
+    minimum_travel_heading: 0.0
+    loop_closure_enabled: true
+    resolution: 0.05
+    max_laser_range: 10.0
+    mode: mapping
+    map_update_interval: 1.0
+    debug_logging: false

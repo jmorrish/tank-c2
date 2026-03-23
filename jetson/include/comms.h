@@ -80,11 +80,17 @@ public:
     // Thread-safe push of a one-shot event line to the web client
     void sendWebEvent(const std::string& json_str);
 
-    // YDLIDAR X3
-    bool startLidar(const std::string& port, int baud);
-    void stopLidar();
-    bool hasObstacle() const { return obstacle_.load(); }
+    // SLAM bridge client (connects to slam_bridge.py:9997)
+    bool startSlamBridge(const std::string& host = "127.0.0.1", int port = 9997);
+    void stopSlamBridge();
+
+    // Obstacle / lidar forward distance (populated by SLAM bridge)
+    bool  hasObstacle() const { return obstacle_.load(); }
     float getLatestLidarFwdDist(double* age_ms = nullptr) const;
+
+    // SLAM-estimated pose
+    struct SlamPose { float x=0, y=0, theta=0; bool valid=false; };
+    SlamPose getSlamPose() const;
 
 private:
     // Control TCP
@@ -146,11 +152,7 @@ private:
     std::atomic<bool> web_rxRun_{false};
     std::mutex web_mtx_;
 
-    // YDLIDAR X3 (separate from Teensy long-range TOF)
-    // tof_dist_ / tof_stamp_ns_ remain owned by the Sensor Teensy (50m single-point).
-    // lidar_fwd_dist_ is the short-range forward arc minimum from the X3 (≤8m).
-    std::thread           lidar_thread_;
-    std::atomic<bool>     lidar_run_{false};
+    // Lidar data (populated by SLAM bridge, not SDK)
     std::atomic<bool>     obstacle_{false};
     std::atomic<float>    lidar_fwd_dist_{-1.0f};
     std::atomic<int64_t>  lidar_stamp_ns_{0};
@@ -158,6 +160,17 @@ private:
     std::vector<std::pair<float,float>> latest_scan_;
 
     void broadcastScan();
+
+    // SLAM bridge
+    int               slam_sock_{-1};
+    mutable std::mutex slam_sock_mtx_;
+    std::thread       slam_rxThread_;
+    std::thread       slam_txThread_;
+    std::atomic<bool> slam_run_{false};
+    mutable std::mutex slam_pose_mtx_;
+    SlamPose          slam_pose_;
+
+    void updateFromBridge(const std::string& line);
 
     // Mission state
     mutable std::mutex mission_mtx_;

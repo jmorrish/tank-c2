@@ -2,7 +2,6 @@
 #include "helpers.h"
 #include "config.h"
 #include "object_detection.h"
-#include <src/CYdLidar.h>
 
 #include <nlohmann/json.hpp>
 
@@ -44,7 +43,7 @@ Comms::~Comms(){
     closeControl();
     closeSensor();
     stopWebIPC();
-    stopLidar();
+    stopSlamBridge();
 }
 
 // Opens a TCP socket to ip:port with a 2-second connect timeout and TCP_NODELAY.
@@ -564,6 +563,12 @@ std::string Comms::getStatusJson() const {
     j["lidar_fwd_m"]      = getLatestLidarFwdDist(&lage);
     j["lidar_fwd_age_ms"] = lage;
     j["lidar_obstacle"]   = obstacle_.load();
+
+    {
+        SlamPose sp = getSlamPose();
+        j["slam_pose"] = {{"x",sp.x},{"y",sp.y},{"theta",sp.theta},{"valid",sp.valid}};
+    }
+
     j["detection_fps"]    = detection_fps_.load();
     j["stream_quality"]   = stream_quality_.load();
     j["target_person_id"] = target_person_id_.load();
@@ -769,6 +774,36 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
             if (od_ptr_) od_ptr_->setTargetPerson(pid);
             LOGI("set_target: person " << pid);
         } catch (...) {}
+        return "";
+    }
+
+    // ── Learn mode: collect appearance crops for AI description ───────────────
+    if (cmd.rfind("learn_start:", 0) == 0) {
+        try {
+            int pid = std::stoi(cmd.substr(12));
+            if (od_ptr_) od_ptr_->startLearn(pid);
+            LOGI("learn_start: person " << pid);
+        } catch (...) {}
+        return "";
+    }
+    if (cmd == "learn_stop") {
+        if (od_ptr_) od_ptr_->stopLearn();
+        LOGI("learn_stop");
+        return "";
+    }
+
+    // ── Stereo depth camera process ────────────────────────────────────────────
+    if (cmd == "stereo_start") {
+        ::system("pkill -f stereo_depth_zmq 2>/dev/null; "
+                 "cd /home/james/stereo_calib && "
+                 "setsid nohup ./stereo_depth_zmq --headless --device 2 "
+                 "</dev/null >/tmp/stereo_depth.log 2>&1 &");
+        LOGI("stereo_start: launched stereo_depth_zmq --headless --device 2");
+        return "";
+    }
+    if (cmd == "stereo_stop") {
+        ::system("pkill -f stereo_depth_zmq 2>/dev/null");
+        LOGI("stereo_stop: killed stereo_depth_zmq");
         return "";
     }
 
@@ -1241,92 +1276,117 @@ void Comms::missionLoop(Comms* self) {
     LOGI("Mission executor finished");
 }
 
-// ── YDLIDAR X3 ────────────────────────────────────────────────────────────────
+// ── SLAM Bridge client ────────────────────────────────────────────────────────
 
-bool Comms::startLidar(const std::string& port, int baud) {
-    if (lidar_run_.exchange(true)) return false;  // already running
-    lidar_thread_ = std::thread([this, port, baud]() {
-        CYdLidar laser;
-        laser.setlidaropt(LidarPropSerialPort,     port.c_str(), port.size());
-        laser.setlidaropt(LidarPropSerialBaudrate, &baud, sizeof(int));
-        // X3-specific parameters (verified from /home/james/test_lidar.py)
-        // All params verified from working X3.yaml (ROS2 driver, tested Oct-Dec 2025)
-        int   lidarType   = TYPE_TRIANGLE;
-        int   devType     = YDLIDAR_TYPE_SERIAL;
-        bool  isSingle    = true;
-        bool  motorDtr    = true;   // X3 motor controlled by DTR line
-        bool  fixedRes    = true;   // required for stable scan frequency
-        int   sampleRate  = 3;      // 3kHz
-        float scanFreq    = 10.0f;  // 10 Hz
-        float rangeMin    = 0.1f;   // X3 min reliable range (metres)
-        float rangeMax    = 12.0f;
-        laser.setlidaropt(LidarPropLidarType,          &lidarType,  sizeof(int));
-        laser.setlidaropt(LidarPropDeviceType,         &devType,    sizeof(int));
-        laser.setlidaropt(LidarPropSingleChannel,      &isSingle,   sizeof(bool));
-        laser.setlidaropt(LidarPropSupportMotorDtrCtrl,&motorDtr,   sizeof(bool));
-        laser.setlidaropt(LidarPropFixedResolution,    &fixedRes,   sizeof(bool));
-        laser.setlidaropt(LidarPropSampleRate,         &sampleRate, sizeof(int));
-        laser.setlidaropt(LidarPropScanFrequency,      &scanFreq,   sizeof(float));
-        laser.setlidaropt(LidarPropMinRange,           &rangeMin,   sizeof(float));
-        laser.setlidaropt(LidarPropMaxRange,           &rangeMax,   sizeof(float));
+bool Comms::startSlamBridge(const std::string& host, int port) {
+    if (slam_run_.exchange(true)) return false;  // already running
 
-        if (!laser.initialize()) {
-            LOGE("LIDAR: init failed on " << port);
-            lidar_run_.store(false);
-            return;
-        }
-        if (!laser.turnOn()) {
-            LOGE("LIDAR: turnOn failed");
-            lidar_run_.store(false);
-            return;
-        }
-        LOGI("LIDAR: running on " << port);
-
-        LaserScan scan;
-        while (lidar_run_.load()) {
-            if (!laser.doProcessSimple(scan)) continue;
-
-            // 1. Forward arc minimum → lidar_fwd_dist_
-            float min_fwd = LIDAR_MAX_RANGE_M;
-            for (auto& pt : scan.points) {
-                float deg = pt.angle * 180.0f / (float)M_PI;
-                if (deg < 0.0f) deg += 360.0f;
-                bool in_fwd = (deg <= LIDAR_FWD_ARC_DEG) || (deg >= 360.0f - LIDAR_FWD_ARC_DEG);
-                if (in_fwd && pt.range > 0.1f && pt.range < LIDAR_MAX_RANGE_M)
-                    min_fwd = std::min(min_fwd, pt.range);
+    // RX thread: connects to slam_bridge.py, reads newline-delimited JSON
+    slam_rxThread_ = std::thread([this, host, port]() {
+        while (slam_run_.load()) {
+            int s = openTcpSocket(host, port);
+            if (s < 0) {
+                LOGW("SLAM bridge not reachable on " << host << ":" << port << " — retrying in 2s");
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+                continue;
             }
-            lidar_fwd_dist_.store(min_fwd < LIDAR_MAX_RANGE_M ? min_fwd : -1.0f);
-            lidar_stamp_ns_.store(now_ns());
+            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); slam_sock_ = s; }
+            LOGI("SLAM bridge connected on " << host << ":" << port);
 
-            // 2. Obstacle flag
-            obstacle_.store(min_fwd < LIDAR_OBSTACLE_M);
-
-            // 3. Subsample scan for web — LIDAR_SCAN_PTS evenly-spaced points
-            std::vector<std::pair<float,float>> pts;
-            pts.reserve(LIDAR_SCAN_PTS);
-            int step = std::max(1, (int)scan.points.size() / LIDAR_SCAN_PTS);
-            for (int i = 0; i < (int)scan.points.size() && (int)pts.size() < LIDAR_SCAN_PTS; i += step) {
-                float deg = scan.points[i].angle * 180.0f / (float)M_PI;
-                if (deg < 0.0f) deg += 360.0f;
-                float r = scan.points[i].range;
-                pts.push_back({deg, (r > 0.05f && r < LIDAR_MAX_RANGE_M) ? r : 0.0f});
+            std::string buf;
+            char tmp[4096];
+            while (slam_run_.load()) {
+                ssize_t n = ::recv(s, tmp, sizeof(tmp)-1, 0);
+                if (n < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) continue; // recv timeout — no data yet
+                    break;  // real error
+                }
+                if (n == 0) break;  // clean close by bridge
+                tmp[n] = '\0';
+                buf += tmp;
+                size_t pos;
+                while ((pos = buf.find('\n')) != std::string::npos) {
+                    std::string line = buf.substr(0, pos);
+                    buf.erase(0, pos + 1);
+                    if (!line.empty()) {
+                        try { updateFromBridge(line); }
+                        catch(...) { LOGW("SLAM bridge: bad JSON: " << line.substr(0,80)); }
+                    }
+                }
             }
-            { std::lock_guard<std::mutex> lk(scan_mtx_); latest_scan_ = std::move(pts); }
 
-            // 4. Broadcast scan to web
-            broadcastScan();
+            ::close(s);
+            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); slam_sock_ = -1; }
+            // clear stale obstacle on disconnect
+            obstacle_.store(false);
+            lidar_fwd_dist_.store(-1.0f);
+            if (slam_run_.load())
+                LOGW("SLAM bridge disconnected — retrying in 2s");
+            std::this_thread::sleep_for(std::chrono::seconds(2));
         }
-
-        laser.turnOff();
-        laser.disconnecting();
-        LOGI("LIDAR: stopped");
     });
+
+    // TX thread: sends encoder data every 100ms when fresh
+    slam_txThread_ = std::thread([this]() {
+        while (slam_run_.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            int sock;
+            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); sock = slam_sock_; }
+            if (sock < 0) continue;
+            int left, right; double age_ms;
+            if (!getLatestEncoders(left, right, age_ms) || age_ms > 200.0) continue;
+            nlohmann::json j;
+            j["type"]   = "odom_data";
+            j["left"]   = left;
+            j["right"]  = right;
+            j["age_ms"] = age_ms;
+            std::string line = j.dump() + "\n";
+            ::send(sock, line.c_str(), line.size(), MSG_NOSIGNAL);
+        }
+    });
+
     return true;
 }
 
-void Comms::stopLidar() {
-    lidar_run_.store(false);
-    if (lidar_thread_.joinable()) lidar_thread_.join();
+void Comms::stopSlamBridge() {
+    slam_run_.store(false);
+    // Unblock RX thread if stuck in recv
+    { std::lock_guard<std::mutex> lk(slam_sock_mtx_);
+      if (slam_sock_ >= 0) { ::shutdown(slam_sock_, SHUT_RDWR); } }
+    if (slam_rxThread_.joinable()) slam_rxThread_.join();
+    if (slam_txThread_.joinable()) slam_txThread_.join();
+    { std::lock_guard<std::mutex> lk(slam_sock_mtx_);
+      if (slam_sock_ >= 0) { ::close(slam_sock_); slam_sock_ = -1; } }
+}
+
+void Comms::updateFromBridge(const std::string& line) {
+    auto j = nlohmann::json::parse(line);
+    const std::string type = j.at("type").get<std::string>();
+
+    if (type == "scan_full") {
+        obstacle_.store(j.at("obs").get<bool>());
+        float fwd = j.at("fwd").get<float>();
+        lidar_fwd_dist_.store(fwd);
+        lidar_stamp_ns_.store(now_ns());
+
+        std::vector<std::pair<float,float>> pts;
+        for (auto& p : j.at("pts"))
+            pts.push_back({p[0].get<float>(), p[1].get<float>()});
+        { std::lock_guard<std::mutex> lk(scan_mtx_); latest_scan_ = std::move(pts); }
+        broadcastScan();
+
+    } else if (type == "slam_pose") {
+        std::lock_guard<std::mutex> lk(slam_pose_mtx_);
+        slam_pose_ = {j.at("x").get<float>(), j.at("y").get<float>(),
+                      j.at("theta").get<float>(), true};
+    } else if (type == "slam_map") {
+        sendWebEvent(line);  // forward PNG to web client unchanged
+    }
+}
+
+Comms::SlamPose Comms::getSlamPose() const {
+    std::lock_guard<std::mutex> lk(slam_pose_mtx_);
+    return slam_pose_;
 }
 
 float Comms::getLatestLidarFwdDist(double* age_ms) const {

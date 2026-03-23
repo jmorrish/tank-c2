@@ -100,6 +100,17 @@ input[type=range]{flex:1;accent-color:var(--accent)}
 .tg-follow:hover,.tg-card.active-target .tg-follow{background:var(--blue);color:var(--bg)}
 .tg-card.active-target .tg-follow{border-color:var(--accent);background:rgba(0,230,118,.15);color:var(--accent)}
 .tg-card.active-target .tg-follow:hover{background:var(--accent);color:var(--bg)}
+.tg-learn{padding:3px 8px;font-size:9px;letter-spacing:1px;border-radius:3px;border:1px solid #9c6fff;background:rgba(156,111,255,.1);color:#9c6fff;cursor:pointer;font-family:inherit;transition:all .15s;width:100%;margin-top:2px}
+.tg-learn:hover{background:#9c6fff;color:var(--bg)}
+.tg-learn.learning{border-color:#ff9800;color:#ff9800;background:rgba(255,152,0,.1)}
+.tg-learn-prog{font-size:9px;color:#ff9800;text-align:center;letter-spacing:1px;display:none;padding:1px 0}
+@keyframes tg-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.tg-desc{font-size:9px;color:var(--muted);line-height:1.4;text-align:left;padding:5px 2px 2px;border-top:1px solid var(--border);margin-top:4px;display:none;word-break:break-word;white-space:normal;max-width:160px}
+.tg-card.has-desc{width:auto;min-width:90px;max-width:170px}
+.tg-prof{font-size:9px;letter-spacing:1px;text-align:center;padding:1px 0}
+.tg-prof[data-level="0"]{color:#555}
+.tg-prof[data-level="1"]{color:#ff9800}
+.tg-prof[data-level="2"]{color:#4caf50}
 
 /* ── MISSION PLANNER ── */
 #tab-planner{flex-direction:row}
@@ -150,6 +161,9 @@ input[type=range]{flex:1;accent-color:var(--accent)}
 .leaflet-popup-content-wrapper{background:var(--panel)!important;border:1px solid var(--border)!important;color:var(--text)!important;border-radius:var(--r)!important;box-shadow:0 4px 20px rgba(0,0,0,.6)!important;font-family:'Courier New',monospace!important;font-size:12px!important}
 .leaflet-popup-tip{background:var(--panel)!important}
 .leaflet-popup-close-button{color:var(--muted)!important}
+#routeBtn.rt-on{background:rgba(255,152,0,.15)!important;border-color:#ff9800!important;color:#ff9800!important}
+#routeProfile{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:10px;letter-spacing:1px;padding:4px 6px;border-radius:var(--r);cursor:pointer;display:none;margin-top:4px}
+.route-stats{bottom:36px;left:10px;background:rgba(10,14,26,.88);border:1px solid #ff9800;border-radius:var(--r);padding:5px 9px;font-size:11px;color:#ff9800;letter-spacing:1px}
 
 /* ── MISSIONS LIBRARY ── */
 #tab-missions{flex-direction:column;padding:14px;gap:12px;overflow:hidden}
@@ -293,6 +307,11 @@ button,a,[role=button]{touch-action:manipulation}
         <span class="tv" id="lidarFwd">—</span>
       </div>
       <div id="obstBadge" style="display:none;text-align:center;margin-top:4px;color:var(--danger);font-size:11px;letter-spacing:1px">&#9888; OBSTACLE</div>
+      <div class="card-row" style="margin-top:6px"><span class="card-label">SLAM</span><span class="tv" id="slamPose">—</span></div>
+    </div>
+    <div class="card" id="slamMapCard" style="grid-column:span 3;display:none">
+      <div class="card-title">▸ SLAM MAP</div>
+      <canvas id="slamMapCanvas" style="display:block;width:100%;height:340px;image-rendering:pixelated;border-radius:4px"></canvas>
     </div>
   </div>
 
@@ -336,6 +355,22 @@ button,a,[role=button]{touch-action:manipulation}
         <button class="btn btn-blue"   onclick="go('planner');newM()">⊕ NEW MISSION</button>
         <div class="kbhint">W/A/D/X = drive &nbsp;|&nbsp; Space = stop<br>Arrow keys = PTU &nbsp;|&nbsp; C = centre PTU</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Depth stream -->
+  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000;min-height:180px">
+    <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">▸ DEPTH</div>
+    <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:6px">
+      <button id="depthBtn" onclick="toggleDepth()"
+        style="font-size:9px;letter-spacing:1px;padding:2px 8px;border-radius:3px;border:1px solid var(--border);background:rgba(0,176,255,.1);color:var(--blue);cursor:pointer;font-family:inherit">START</button>
+      <span id="depthStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">OFF</span>
+    </div>
+    <img id="depthImg" alt="Depth feed" style="width:100%;display:none;max-height:280px;object-fit:contain"
+      onerror="depthErr()" onload="depthOk()">
+    <div id="depthPlaceholder" style="width:100%;height:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:#050810">
+      <div style="font-size:11px;letter-spacing:2px;color:#333">DEPTH CAMERA OFF</div>
+      <div style="font-size:10px;color:#222">Press START to activate</div>
     </div>
   </div>
 
@@ -479,7 +514,13 @@ button,a,[role=button]{touch-action:manipulation}
       <button class="btn btn-muted" onclick="ctrTank()">⊕ TANK</button>
       <button class="btn btn-muted" onclick="ctrUser()">⊕ YOU</button>
       <button class="btn btn-muted" onclick="fitAll()">⊡ FIT ALL</button>
+      <button class="btn btn-muted" onclick="toggleAutoRoute()" id="routeBtn">AUTO-ROUTE</button>
+      <select id="routeProfile" onchange="scheduleRouteRefresh()">
+        <option value="foot">FOOTPATH</option>
+        <option value="car">ROAD</option>
+      </select>
     </div>
+    <div class="mo route-stats" id="routeStats" style="display:none"></div>
     <div class="mo mapcoords" id="mc">Move mouse over map</div>
     <div class="mo userdist" id="userDist"></div>
   </div>
@@ -531,6 +572,36 @@ function handle(m){
     updateTele(m.data);
   } else if(m.type==='new_target'){
     loadTargets();
+  } else if(m.type==='learn_progress'){
+    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
+    if(card){
+      const prog=card.querySelector('.tg-learn-prog');
+      if(prog){prog.textContent=m.count+' / '+m.total;prog.style.display='block';}
+    }
+  } else if(m.type==='learn_status'){
+    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
+    if(card){
+      const prog=card.querySelector('.tg-learn-prog');
+      const btn=card.querySelector('.tg-learn');
+      if(m.status==='analysing'){
+        if(prog){prog.textContent='Asking AI (' +m.count+' crops)...';prog.style.display='block';prog.style.color='#9c6fff';}
+      } else if(m.status==='error'){
+        if(prog){prog.textContent='Error: '+m.message;prog.style.display='block';prog.style.color='#ff4444';}
+        if(btn){btn.textContent='DESCRIBE';btn.classList.remove('learning');}
+      }
+    }
+  } else if(m.type==='target_description'){
+    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
+    if(card){
+      const desc=card.querySelector('.tg-desc');
+      const btn=card.querySelector('.tg-learn');
+      const prog=card.querySelector('.tg-learn-prog');
+      if(desc){desc.textContent=m.description;desc.style.display='block';}
+      if(btn){btn.textContent='DESCRIBE';btn.classList.remove('learning');}
+      if(prog){prog.style.display='none';prog.style.color='';}
+      card.classList.add('has-desc');
+    }
+    setTimeout(loadTargets, 500);  // refresh embed count after learn completes
   } else if(m.type==='mission_status'){
     if(m.event==='executing') showBanner(m.name,'ok');
     else if(m.event==='completed'){
@@ -548,6 +619,8 @@ function handle(m){
     else if(m.event==='pushed') console.log('[mission] pushed:',m.name);
   } else if(m.type==='scan'){
     updateRadar(m);
+  } else if(m.type==='slam_map'){
+    updateSlamMap(m);
   }
 }
 
@@ -601,6 +674,71 @@ function updateRadar(msg){
   if(obsEl)obsEl.style.display=msg.obs?'block':'none';
 }
 
+// ── SLAM Map ───────────────────────────────────────────────────────────────
+let lastSlamMapMeta = null;   // {res, ox, oy, w, h} — for robot overlay
+let lastSlamPose    = null;   // {x, y, theta} from latest status
+
+function updateSlamMap(msg){
+  const card = document.getElementById('slamMapCard');
+  const canvas = document.getElementById('slamMapCanvas');
+  if(!card || !canvas) return;
+
+  card.style.display = '';
+
+  // Fixed canvas pixel buffer — never resized, so layout never jumps
+  const CW = 800, CH = 340;
+  if(canvas.width !== CW || canvas.height !== CH){
+    canvas.width  = CW;
+    canvas.height = CH;
+  }
+
+  lastSlamMapMeta = {res: msg.res, ox: msg.ox, oy: msg.oy, w: msg.w, h: msg.h};
+
+  const ctx = canvas.getContext('2d');
+
+  // Scale map to fit inside canvas while preserving aspect ratio (letterbox)
+  const scale = Math.min(CW / msg.w, CH / msg.h);
+  const dw = Math.round(msg.w * scale);
+  const dh = Math.round(msg.h * scale);
+  const dx = Math.round((CW - dw) / 2);
+  const dy = Math.round((CH - dh) / 2);
+
+  const img = new Image();
+  img.onload = () => {
+    ctx.fillStyle = '#0a1a28';
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.drawImage(img, dx, dy, dw, dh);
+    drawRobotOnMap(ctx, CW, CH, dx, dy, dw, dh);
+  };
+  img.src = 'data:image/png;base64,' + msg.png;
+}
+
+function drawRobotOnMap(ctx, CW, CH, dx, dy, dw, dh){
+  if(!lastSlamPose || !lastSlamMapMeta || !lastSlamPose.valid) return;
+  const {res, ox, oy, w, h} = lastSlamMapMeta;
+
+  // Map cell → canvas pixel, accounting for letterbox offset and scale
+  const scaleX = dw / w, scaleY = dh / h;
+  const px = dx + (lastSlamPose.x - ox) / res * scaleX;
+  const py = dy + dh - (lastSlamPose.y - oy) / res * scaleY;
+
+  if(px < dx || px > dx+dw || py < dy || py > dy+dh) return;
+
+  // Heading arrow
+  const theta = lastSlamPose.theta;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(-theta);
+  ctx.strokeStyle = '#ff5252';
+  ctx.lineWidth   = 2;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(10,0); ctx.stroke();
+  ctx.restore();
+
+  // Robot dot
+  ctx.fillStyle = '#00b0ff';
+  ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI*2); ctx.fill();
+}
+
 // ── Telemetry ──────────────────────────────────────────────────────────────
 let lastGPS=null;
 const f=(v,d=1,u='')=>(v==null||isNaN(v))?'—':v.toFixed(d)+(u?' '+u:'');
@@ -610,7 +748,7 @@ const setStale=(id,stale)=>{const c=cardOf(id);if(c)c.classList.toggle('stale',s
 function updateTele(d){
   if(!d){
     // Jetson disconnected — reset all displayed values to dashes
-    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps'].forEach(id=>sv2(id,'—'));
+    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps','slamPose'].forEach(id=>sv2(id,'—'));
     ['iY','gLa','eL','dV'].forEach(id=>setStale(id,false));
     return;
   }
@@ -619,6 +757,10 @@ function updateTele(d){
   if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'));setStale('eL',d.encoders.age_ms>2000)}
   if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'));setStale('dV',d.distance_age_ms>2000)}
   if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
+  if(d.slam_pose?.valid){
+    lastSlamPose = d.slam_pose;
+    sv2('slamPose',`x:${f(d.slam_pose.x,1)} y:${f(d.slam_pose.y,1)} ${f(d.slam_pose.theta*180/Math.PI,0)}°`);
+  } else sv2('slamPose','—');
   if(d.stream_quality!=null&&!sqDebounce){const sl=document.getElementById('sqSlider');if(sl){sl.value=d.stream_quality;document.getElementById('sqVal').textContent=d.stream_quality;}}
   if(d.target_person_id!=null) highlightTarget(d.target_person_id);
   // Mode + mission progress from Jetson telemetry
@@ -658,13 +800,20 @@ function loadTargets(){
         // Update label if name changed
         const lbl = grid.querySelector(`.tg-card[data-pid="${t.id}"] .tg-label`);
         if(lbl && !lbl.isContentEditable) lbl.textContent = t.name;
+        const prof = grid.querySelector(`.tg-card[data-pid="${t.id}"] .tg-prof`);
+        if(prof) setEmbedCount(prof, t.embed_count||0);
         return;
       }
       const card = document.createElement('div');
       card.className='tg-card'; card.dataset.pid=t.id;
       card.innerHTML=`<img class="tg-thumb" src="/api/targets/${t.id}/thumb?t=${Date.now()}" alt="P${t.id}" loading="lazy">
 <span class="tg-label" title="Click to rename">${t.name}</span>
-<button class="tg-follow" onclick="followTarget(${t.id})">FOLLOW</button>`;
+<button class="tg-follow" onclick="followTarget(${t.id})">FOLLOW</button>
+<div class="tg-learn-prog"></div>
+<button class="tg-learn" onclick="toggleLearn(this,${t.id})">DESCRIBE</button>
+<div class="tg-prof"></div>
+<div class="tg-desc"></div>`;
+      setEmbedCount(card.querySelector('.tg-prof'), t.embed_count||0);
       // Inline rename on label click
       const lbl = card.querySelector('.tg-label');
       lbl.addEventListener('click', () => startRename(lbl, t.id));
@@ -703,6 +852,125 @@ function startRename(lbl, id){
 
 function followTarget(id){
   sendCmd('set_target:'+id);
+}
+
+function toggleLearn(btn, id){
+  const prog=btn.previousElementSibling;
+  if(btn.classList.contains('learning')){
+    btn.classList.remove('learning');
+    btn.textContent='DESCRIBE';
+    if(prog){prog.textContent='Sending...';prog.style.display='block';}
+    sendCmd('learn_stop');
+    setTimeout(loadTargets, 1500);  // refresh embed count after early stop + file write
+  } else {
+    btn.classList.add('learning');
+    btn.textContent='■ STOP';
+    if(prog){prog.textContent='0 / 20';prog.style.display='block';}
+    sendCmd('learn_start:'+id);
+  }
+}
+
+function setEmbedCount(el, n){
+  if(!el) return;
+  el.textContent = '◉ ' + n + ' embed' + (n===1?'':'s');
+  el.dataset.level = n >= 16 ? '2' : n >= 6 ? '1' : '0';
+}
+
+// ── Road Routing ─────────────────────────────────────────────────────────────
+
+function toggleAutoRoute(){
+  autoRouteEnabled=!autoRouteEnabled;
+  const btn=document.getElementById('routeBtn');
+  const sel=document.getElementById('routeProfile');
+  btn.classList.toggle('rt-on',autoRouteEnabled);
+  sel.style.display=autoRouteEnabled?'block':'none';
+  if(autoRouteEnabled){
+    fetchRoute();
+  } else {
+    routeSegments=null;
+    routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
+    document.getElementById('routeStats').style.display='none';
+    redrawMap(); // restore green dashed line
+  }
+}
+
+function scheduleRouteRefresh(){
+  if(!autoRouteEnabled)return;
+  clearTimeout(_routeTimer);
+  _routeTimer=setTimeout(fetchRoute,700);
+}
+
+async function fetchRoute(){
+  if(!autoRouteEnabled||wps.length<2){
+    routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
+    document.getElementById('routeStats').style.display='none';
+    return;
+  }
+  const statsEl=document.getElementById('routeStats');
+  statsEl.textContent='Routing…';statsEl.style.display='block';
+  const profile=document.getElementById('routeProfile').value;
+  const pairs=[];
+  for(let i=0;i<wps.length-1;i++) pairs.push([wps[i],wps[i+1]]);
+  if(document.getElementById('mRt').checked&&wps.length>=2) pairs.push([wps[wps.length-1],wps[0]]);
+
+  const segments=[];
+  let totalDist=0,totalDur=0,anyFailed=false;
+  for(const[a,b] of pairs){
+    try{
+      const r=await fetch('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({points:[{lat:a.lat,lng:a.lng},{lat:b.lat,lng:b.lng}],profile})});
+      const d=await r.json();
+      if(d.points){segments.push(d.points);totalDist+=d.distance||0;totalDur+=d.duration||0;}
+      else{segments.push(null);anyFailed=true;}
+    }catch{segments.push(null);anyFailed=true;}
+  }
+  routeSegments=segments;
+  drawRouteLayer();
+  const km=(totalDist/1000).toFixed(2);
+  const mins=Math.round(totalDur/60);
+  const exp=buildExpandedWaypoints().length;
+  statsEl.textContent=`${km} km · ~${mins} min · ${exp} wpts sent${anyFailed?' · ⚠ some segs straight-line':''}`;
+}
+
+function drawRouteLayer(){
+  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
+  if(!routeSegments)return;
+  routeSegments.forEach(seg=>{
+    if(!seg)return;
+    const l=L.polyline(seg.map(p=>[p.lat,p.lng]),{color:'#ff9800',weight:4,opacity:.8,lineJoin:'round'}).addTo(map);
+    routeLayers.push(l);
+  });
+}
+
+function buildExpandedWaypoints(){
+  if(!routeSegments||routeSegments.length<wps.length-1) return wps;
+  const defSpeed=+document.getElementById('mSp').value;
+  const expanded=[];
+  for(let i=0;i<wps.length;i++){
+    if(i>0&&routeSegments[i-1]){
+      const seg=routeSegments[i-1];
+      for(let j=1;j<seg.length-1;j++){
+        expanded.push({id:`_r${i-1}_${j}`,name:`Route ${i}.${j}`,
+          lat:seg[j].lat,lng:seg[j].lng,
+          speed:wps[i-1].speed||defSpeed,arrivalRadius:5,arrivalAction:'continue',
+          waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,
+          followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''});
+      }
+    }
+    expanded.push(wps[i]);
+  }
+  // Return-to-start segment
+  if(document.getElementById('mRt').checked&&routeSegments.length===wps.length){
+    const seg=routeSegments[wps.length-1];
+    if(seg) for(let j=1;j<seg.length-1;j++){
+      expanded.push({id:`_rret_${j}`,name:`Return ${j}`,
+        lat:seg[j].lat,lng:seg[j].lng,
+        speed:wps[0].speed||defSpeed,arrivalRadius:5,arrivalAction:'continue',
+        waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,
+        followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''});
+    }
+  }
+  return expanded;
 }
 
 function highlightTarget(id){
@@ -775,6 +1043,7 @@ function go(name){
 // ── Map ────────────────────────────────────────────────────────────────────
 let map,osmL,satL,satOn=false,addMode=false,tankMk=null,wpMks=[],wpPoly=null;
 let userMk=null,userAccCircle=null,userLatLng=null;
+let autoRouteEnabled=false,routeSegments=null,routeLayers=[],_routeTimer=null;
 const COLORS=['#00e676','#00b0ff','#ffab00','#ff6e40','#e040fb','#40c4ff','#69f0ae','#ffd740','#ff6090','#a7ffeb'];
 
 function initMap(){
@@ -867,14 +1136,19 @@ function mkIcon(i,action){
 function redrawMap(){
   wpMks.forEach(m=>map.removeLayer(m));wpMks=[];
   if(wpPoly){map.removeLayer(wpPoly);wpPoly=null}
+  // Clear route preview layers — redrawn by drawRouteLayer() after fetch
+  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
   wps.forEach((wp,i)=>{
     const mk=L.marker([wp.lat,wp.lng],{icon:mkIcon(i,wp.arrivalAction),draggable:true}).addTo(map)
       .bindPopup(`<b style="color:var(--accent)">WP${i+1}: ${esc(wp.name)}</b><br><span style="color:var(--muted);font-size:11px">${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</span><br><span style="color:var(--warn);font-size:11px">▸ ${esc(wp.arrivalAction||'continue')}</span>`);
     mk.on('click',()=>selWP(i));
-    mk.on('dragend',e=>{const ll=e.target.getLatLng();wps[i].lat=+ll.lat.toFixed(7);wps[i].lng=+ll.lng.toFixed(7);if(sel===i){document.getElementById('wLa').value=wps[i].lat;document.getElementById('wLg').value=wps[i].lng}redrawMap()});
+    mk.on('dragend',e=>{const ll=e.target.getLatLng();wps[i].lat=+ll.lat.toFixed(7);wps[i].lng=+ll.lng.toFixed(7);if(sel===i){document.getElementById('wLa').value=wps[i].lat;document.getElementById('wLg').value=wps[i].lng}redrawMap();scheduleRouteRefresh()});
     wpMks.push(mk);
   });
-  if(wps.length>1){const pts=wps.map(w=>[w.lat,w.lng]);if(document.getElementById('mRt').checked)pts.push(pts[0]);wpPoly=L.polyline(pts,{color:'#00e676',weight:2,opacity:.55,dashArray:'6,5'}).addTo(map)}
+  // Green dashed direct line only when auto-route is off
+  if(wps.length>1&&!autoRouteEnabled){const pts=wps.map(w=>[w.lat,w.lng]);if(document.getElementById('mRt').checked)pts.push(pts[0]);wpPoly=L.polyline(pts,{color:'#00e676',weight:2,opacity:.55,dashArray:'6,5'}).addTo(map)}
+  // Re-draw any existing route segments
+  if(autoRouteEnabled&&routeSegments) drawRouteLayer();
 }
 
 // ── Waypoints ──────────────────────────────────────────────────────────────
@@ -885,8 +1159,9 @@ function addWP(lat,lng){
   const wp={id:'wp_'+(ctr++),name:`WP ${wps.length+1}`,lat:+lat.toFixed(7),lng:+lng.toFixed(7),speed:+document.getElementById('mSp').value,arrivalRadius:3,arrivalAction:'continue',waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''};
   wps.push(wp);redrawList();redrawMap();selWP(wps.length-1);
   if(map&&wp.lat&&wp.lng)map.panTo([wp.lat,wp.lng]);
+  scheduleRouteRefresh();
 }
-function removeWP(i){wps.splice(i,1);if(sel>=wps.length)sel=wps.length-1;redrawList();redrawMap();if(sel>=0)selWP(sel);else document.getElementById('wed').classList.add('hidden')}
+function removeWP(i){wps.splice(i,1);if(sel>=wps.length)sel=wps.length-1;redrawList();redrawMap();if(sel>=0)selWP(sel);else document.getElementById('wed').classList.add('hidden');scheduleRouteRefresh()}
 function selWP(i){
   sel=i;
   document.querySelectorAll('.wp-item').forEach((e,j)=>e.classList.toggle('sel',j===i));
@@ -914,7 +1189,7 @@ function syncWP(){
 }
 function syncCoords(){
   if(sel<0)return;const lat=+document.getElementById('wLa').value,lng=+document.getElementById('wLg').value;
-  if(!isNaN(lat)&&!isNaN(lng)){wps[sel].lat=lat;wps[sel].lng=lng;redrawMap()}
+  if(!isNaN(lat)&&!isNaN(lng)){wps[sel].lat=lat;wps[sel].lng=lng;redrawMap();scheduleRouteRefresh()}
 }
 function showAF(){
   const v=document.getElementById('wAc').value;
@@ -932,7 +1207,7 @@ function redrawList(){
     el.addEventListener('click',()=>selWP(i));c.appendChild(el);
   });
   if(window._srt)window._srt.destroy();
-  window._srt=Sortable.create(c,{handle:'.wph',animation:120,onEnd:ev=>{const m=wps.splice(ev.oldIndex,1)[0];wps.splice(ev.newIndex,0,m);sel=ev.newIndex;redrawList();redrawMap()}});
+  window._srt=Sortable.create(c,{handle:'.wph',animation:120,onEnd:ev=>{const m=wps.splice(ev.oldIndex,1)[0];wps.splice(ev.newIndex,0,m);sel=ev.newIndex;redrawList();redrawMap();scheduleRouteRefresh()}});
 }
 
 // ── Mission CRUD ───────────────────────────────────────────────────────────
@@ -949,7 +1224,8 @@ async function pushCurrent(btn){
   await saveM();if(!curId)return;
   const orig=btn.textContent;btn.textContent='…';btn.disabled=true;
   try{
-    const r=await fetch(`/api/missions/${curId}/push`,{method:'POST'});
+    const body=autoRouteEnabled&&routeSegments?{waypoints:buildExpandedWaypoints()}:{};
+    const r=await fetch(`/api/missions/${curId}/push`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
     btn.textContent=j.ok?'✓ SENT':'⚠ OFFLINE';
     setTimeout(()=>{btn.textContent=orig;btn.disabled=false},2000);
@@ -958,7 +1234,8 @@ async function pushCurrent(btn){
 async function runCurrent(){
   if(!wps.length){alert('Add at least one waypoint first.');return}
   await saveM();if(!curId)return;
-  const r=await fetch(`/api/missions/${curId}/execute`,{method:'POST'});
+  const body=autoRouteEnabled&&routeSegments?{waypoints:buildExpandedWaypoints()}:{};
+  const r=await fetch(`/api/missions/${curId}/execute`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const j=await r.json();
   if(j.ok)showBanner(document.getElementById('mN').value);
   else alert('Mission queued — Jetson will execute when connected.');
@@ -978,7 +1255,7 @@ function loadMD(m){
   document.getElementById('wed').classList.add('hidden');redrawList();redrawMap();
   if(wps.length)setTimeout(fitAll,300);go('planner');
 }
-document.getElementById('mRt').addEventListener('change',redrawMap);
+document.getElementById('mRt').addEventListener('change',()=>{redrawMap();scheduleRouteRefresh()});
 
 // ── Library ────────────────────────────────────────────────────────────────
 async function resumeById(id,btn){
@@ -1141,6 +1418,73 @@ function streamErr() {
 function scheduleStreamRetry(delay) {
   clearTimeout(streamRetryTimer);
   streamRetryTimer = setTimeout(() => startStream(), delay);
+}
+
+// ── Depth stream ──────────────────────────────────────────────────────────────
+let depthRunning = false, depthOnline = false, depthSnapshotTimer = null, depthRetryTimer = null;
+
+function toggleDepth() {
+  if (depthRunning) {
+    depthRunning = false;
+    sendCmd('stereo_stop');
+    clearTimeout(depthSnapshotTimer); clearTimeout(depthRetryTimer);
+    const img = document.getElementById('depthImg');
+    img.src = ''; img.style.display = 'none';
+    document.getElementById('depthPlaceholder').style.display = 'flex';
+    document.getElementById('depthPlaceholder').innerHTML =
+      '<div style="font-size:11px;letter-spacing:2px;color:#333">DEPTH CAMERA OFF</div><div style="font-size:10px;color:#222">Press START to activate</div>';
+    document.getElementById('depthBtn').textContent = 'START';
+    document.getElementById('depthStatus').textContent = 'OFF';
+    document.getElementById('depthStatus').style.color = 'var(--muted)';
+  } else {
+    depthRunning = true;
+    sendCmd('stereo_start');
+    document.getElementById('depthBtn').textContent = 'STOP';
+    document.getElementById('depthStatus').textContent = 'STARTING…';
+    document.getElementById('depthStatus').style.color = 'var(--warn)';
+    // Give the process 3s to start then begin streaming
+    setTimeout(startDepthStream, 3000);
+  }
+}
+
+function startDepthStream() {
+  if (!depthRunning) return;
+  const img = document.getElementById('depthImg');
+  if (isSafari) {
+    img.src = '/depth_snapshot?' + Date.now();
+  } else {
+    img.src = '/depth_stream?' + Date.now();
+  }
+}
+
+function depthSnapshotTick() {
+  if (!isSafari || !depthRunning || !depthOnline) return;
+  const img = document.getElementById('depthImg');
+  const next = new Image();
+  next.onload  = () => { img.src = next.src; depthSnapshotTimer = setTimeout(depthSnapshotTick, 100); };
+  next.onerror = () => depthErr();
+  next.src = '/depth_snapshot?' + Date.now();
+}
+
+function depthOk() {
+  depthOnline = true;
+  document.getElementById('depthImg').style.display = 'block';
+  document.getElementById('depthPlaceholder').style.display = 'none';
+  document.getElementById('depthStatus').textContent = 'LIVE';
+  document.getElementById('depthStatus').style.color = 'var(--accent)';
+  if (isSafari) depthSnapshotTick();
+}
+
+function depthErr() {
+  depthOnline = false;
+  clearTimeout(depthSnapshotTimer);
+  document.getElementById('depthImg').style.display = 'none';
+  document.getElementById('depthPlaceholder').style.display = 'flex';
+  document.getElementById('depthPlaceholder').innerHTML =
+    '<div style="font-size:11px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>';
+  document.getElementById('depthStatus').textContent = 'NO SIGNAL';
+  document.getElementById('depthStatus').style.color = 'var(--danger)';
+  if (depthRunning) depthRetryTimer = setTimeout(startDepthStream, 4000);
 }
 
 // Stale-stream watchdog: MJPEG can silently freeze without firing onerror.
