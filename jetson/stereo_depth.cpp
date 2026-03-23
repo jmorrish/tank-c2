@@ -1,4 +1,5 @@
 #include "stereo_depth.h"
+#include "comms.h"
 #include "helpers.h"
 
 #include <opencv2/opencv.hpp>
@@ -16,11 +17,11 @@ using namespace cv;
 
 // ── public ────────────────────────────────────────────────────────────────────
 
-void StereoDepth::start(const std::string& calib_xml, int device_id, int zmq_port) {
+void StereoDepth::start(Comms* comms, const std::string& calib_xml, int zmq_port) {
     if (run_.load()) return;
     if (thread_.joinable()) thread_.join();  // reap any previous (failed) thread
     run_.store(true);
-    thread_ = std::thread(&StereoDepth::loop, this, calib_xml, device_id, zmq_port);
+    thread_ = std::thread(&StereoDepth::loop, this, comms, calib_xml, zmq_port);
 }
 
 void StereoDepth::stop() {
@@ -30,7 +31,7 @@ void StereoDepth::stop() {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-void StereoDepth::loop(std::string calib_xml, int device_id, int zmq_port) {
+void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
   try {
     // Kill any leftover stereo_depth_zmq subprocess that may own the ZMQ port
     ::system("pkill -f stereo_depth_zmq 2>/dev/null; sleep 0.2");
@@ -84,23 +85,6 @@ void StereoDepth::loop(std::string calib_xml, int device_id, int zmq_port) {
 
     LOGI("StereoDepth: calibration loaded — f=" << f << " B=" << B);
 
-    // ── Camera ───────────────────────────────────────────────────────────────
-    // Use V4L2 backend directly — avoids GStreamer pipeline failures on Jetson.
-    // MJPEG fourcc reduces USB bandwidth ~10x vs raw YUV.
-    VideoCapture cap(device_id, CAP_V4L2);
-    cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
-    cap.set(CAP_PROP_FRAME_WIDTH,  2560);
-    cap.set(CAP_PROP_FRAME_HEIGHT,  720);
-    cap.set(CAP_PROP_FPS, 10);   // cap at 10fps — reduces USB load and pipeline lag
-    if (!cap.isOpened()) {
-        LOGE("StereoDepth: cannot open camera device " << device_id);
-        run_.store(false);
-        return;
-    }
-    LOGI("StereoDepth: camera " << device_id << " opened at "
-         << cap.get(CAP_PROP_FRAME_WIDTH) << "x" << cap.get(CAP_PROP_FRAME_HEIGHT)
-         << " @ " << cap.get(CAP_PROP_FPS) << "fps");
-
     // ── CUDA StereoBM ────────────────────────────────────────────────────────
     const int numDisparities = 128;
     const int blockSize      = 9;
@@ -112,12 +96,12 @@ void StereoDepth::loop(std::string calib_xml, int device_id, int zmq_port) {
     std::vector<int> hist_bins(hist_edges.size(), 0);
 
     // ── Main loop ────────────────────────────────────────────────────────────
+    // Frames are pushed by ObjectDetection (which owns the stereo camera).
     int dbg_frame = 0;
     while (run_.load()) {
         Mat frame;
-        if (!cap.read(frame)) {
-            LOGW("StereoDepth: failed to grab frame — retrying");
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (!comms->getLatestStereoFrame(frame)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
 
@@ -237,7 +221,6 @@ void StereoDepth::loop(std::string calib_xml, int device_id, int zmq_port) {
         } catch (const zmq::error_t&) {}
     }
 
-    cap.release();
     pub.close();
     ctx.close();
     LOGI("StereoDepth: thread stopped");

@@ -371,9 +371,18 @@ void ObjectDetection::mainLoop(){
     auto openCam = [&]() -> bool {
         while (run_.load()){
             cap.release();
-            cap.open(cam1_index_);
+            // Open stereo camera with V4L2 + MJPEG at full side-by-side resolution.
+            cap.open(cam1_index_, cv::CAP_V4L2);
+            cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+            cap.set(cv::CAP_PROP_FRAME_WIDTH,  2560);
+            cap.set(cv::CAP_PROP_FRAME_HEIGHT,  720);
+            cap.set(cv::CAP_PROP_FPS, 10);
+            cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
             if (cap.isOpened()){
-                LOGI("cam1: opened index " << cam1_index_);
+                LOGI("cam1: opened index " << cam1_index_ << " at "
+                     << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
+                     << cap.get(cv::CAP_PROP_FRAME_HEIGHT)
+                     << " @ " << cap.get(cv::CAP_PROP_FPS) << "fps");
                 return true;
             }
             LOGW("cam1: not available (index " << cam1_index_ << ") — retrying in " << CAM_RETRY_SEC << "s");
@@ -397,9 +406,9 @@ void ObjectDetection::mainLoop(){
     constexpr int MAX_EMPTY = 30;
 
     while (run_.load()){
-        cv::Mat frame;
-        cap >> frame;
-        if (frame.empty()){
+        cv::Mat raw_frame;
+        cap >> raw_frame;
+        if (raw_frame.empty()){
             ++emptyCount;
             if (emptyCount >= MAX_EMPTY){
                 LOGW("cam1: camera lost (unplugged?) — waiting for reconnect...");
@@ -412,6 +421,11 @@ void ObjectDetection::mainLoop(){
             continue;
         }
         emptyCount = 0;
+
+        // Push full 2560×720 frame for StereoDepth to consume, then work with
+        // the left half (1280×720) for detection, streaming, and PTU control.
+        if (comms_) comms_->putStereoFrame(raw_frame);
+        cv::Mat frame = raw_frame(cv::Rect(0, 0, raw_frame.cols / 2, raw_frame.rows)).clone();
 
         // ── YOLO ────────────────────────────────────────────────────────────
         std::vector<det::Object> dets;

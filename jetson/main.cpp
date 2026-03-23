@@ -86,10 +86,10 @@ int main(int argc, char** argv){
         return 1;
     }
 
-    // Camera index: default 0, override with --cam <n>
-    // ObjectDetection's internal loop waits for the camera to appear, so it's
-    // safe to start even when nothing is plugged in yet.
-    int cam1 = 0;
+    // Stereo camera device index — ObjectDetection owns this camera, reads full
+    // 2560×720 side-by-side frames, crops left half for detection/streaming, and
+    // pushes full frames to Comms for StereoDepth to consume.
+    int cam1 = 2;
     if (!auto_continue && !headless && !no_hw){
         auto cams = enumerateCams();
         if (!cams.empty()){

@@ -8,6 +8,7 @@
 #include <limits>
 #include <vector>
 #include <utility>
+#include <opencv2/opencv.hpp>
 #include "helpers.h"      // For GPSData and EncoderData
 #include "stereo_depth.h" // Integrated stereo depth camera
 
@@ -97,6 +98,11 @@ public:
     void startStereoDepth();
     void stopStereoDepth();
 
+    // Shared stereo frame: ObjectDetection pushes full 2560×720 frames here;
+    // StereoDepth consumes them (avoids opening the camera twice).
+    void putStereoFrame(const cv::Mat& frame);
+    bool getLatestStereoFrame(cv::Mat& out) const;
+
 private:
     // Control TCP
     SocketFd    control_sock_;
@@ -179,6 +185,11 @@ private:
 
     // Stereo depth camera instance
     StereoDepth stereo_depth_;
+
+    // Shared stereo frame buffer (written by ObjectDetection, read by StereoDepth)
+    mutable std::mutex      stereo_frame_mtx_;
+    cv::Mat                 latest_stereo_frame_;
+    mutable std::atomic<bool> stereo_frame_ready_{false};
 
     // Mission state
     mutable std::mutex mission_mtx_;
