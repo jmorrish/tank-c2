@@ -16,7 +16,7 @@ message(STATUS "CUDA Headers: ${CUDA_INCLUDE_DIRS}")
 
 # --- OpenCV ---
 set(OpenCV_DIR /usr/local/lib/cmake/opencv4)
-find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc dnn videoio highgui features2d calib3d video videostab)
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc dnn videoio highgui features2d calib3d video videostab cudaimgproc cudastereo cudawarping)
 message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "OpenCV libs: ${OpenCV_LIBRARIES}")
 
@@ -70,6 +70,7 @@ add_executable(${PROJECT_NAME}
     object_detection.cpp
     movement.cpp
     comms.cpp
+    stereo_depth.cpp
     runtime_config.cpp
     logger.cpp
     ${BOT_SORT_SOURCES}

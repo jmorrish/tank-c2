@@ -8,7 +8,8 @@
 #include <limits>
 #include <vector>
 #include <utility>
-#include "helpers.h"  // For GPSData and EncoderData
+#include "helpers.h"      // For GPSData and EncoderData
+#include "stereo_depth.h" // Integrated stereo depth camera
 
 class ObjectDetection;  // fwd
 
@@ -92,6 +93,10 @@ public:
     struct SlamPose { float x=0, y=0, theta=0; bool valid=false; };
     SlamPose getSlamPose() const;
 
+    // Stereo depth camera (integrated — replaces external stereo_depth_zmq subprocess)
+    void startStereoDepth();
+    void stopStereoDepth();
+
 private:
     // Control TCP
     SocketFd    control_sock_;
@@ -171,6 +176,9 @@ private:
     SlamPose          slam_pose_;
 
     void updateFromBridge(const std::string& line);
+
+    // Stereo depth camera instance
+    StereoDepth stereo_depth_;
 
     // Mission state
     mutable std::mutex mission_mtx_;

@@ -107,11 +107,8 @@ int main(int argc, char** argv){
     // SLAM bridge — connects to slam_bridge.py:9997 in background (non-fatal)
     comms.startSlamBridge();
 
-    // Stereo depth camera — auto-start on launch, stays running until app exits
-    ::system("pkill -f stereo_depth_zmq 2>/dev/null; "
-             "cd /home/james/stereo_calib && "
-             "setsid nohup ./stereo_depth_zmq --headless --device 2 "
-             "</dev/null >/tmp/stereo_depth.log 2>&1 &");
+    // Stereo depth camera — integrated thread, auto-start on launch
+    comms.startStereoDepth();
 
     // Shared bus: detection -> movement
     AtomicLatest<TargetMsg> bus;

@@ -44,6 +44,7 @@ Comms::~Comms(){
     closeSensor();
     stopWebIPC();
     stopSlamBridge();
+    stopStereoDepth();
 }
 
 // Opens a TCP socket to ip:port with a 2-second connect timeout and TCP_NODELAY.
@@ -792,20 +793,9 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         return "";
     }
 
-    // ── Stereo depth camera process ────────────────────────────────────────────
-    if (cmd == "stereo_start") {
-        ::system("pkill -f stereo_depth_zmq 2>/dev/null; "
-                 "cd /home/james/stereo_calib && "
-                 "setsid nohup ./stereo_depth_zmq --headless --device 2 "
-                 "</dev/null >/tmp/stereo_depth.log 2>&1 &");
-        LOGI("stereo_start: launched stereo_depth_zmq --headless --device 2");
-        return "";
-    }
-    if (cmd == "stereo_stop") {
-        ::system("pkill -f stereo_depth_zmq 2>/dev/null");
-        LOGI("stereo_stop: killed stereo_depth_zmq");
-        return "";
-    }
+    // ── Stereo depth camera ───────────────────────────────────────────────────
+    if (cmd == "stereo_start") { startStereoDepth(); return ""; }
+    if (cmd == "stereo_stop")  { stopStereoDepth();  return ""; }
 
     // ── Stream quality: stream_quality:<1-100> ────────────────────────────────
     if (cmd.rfind("stream_quality:", 0) == 0) {
@@ -1357,6 +1347,22 @@ void Comms::stopSlamBridge() {
     if (slam_txThread_.joinable()) slam_txThread_.join();
     { std::lock_guard<std::mutex> lk(slam_sock_mtx_);
       if (slam_sock_ >= 0) { ::close(slam_sock_); slam_sock_ = -1; } }
+}
+
+// ── Stereo depth camera ───────────────────────────────────────────────────────
+
+void Comms::startStereoDepth() {
+    if (stereo_depth_.running()) {
+        LOGI("StereoDepth already running");
+        return;
+    }
+    LOGI("Starting integrated stereo depth camera");
+    stereo_depth_.start();
+}
+
+void Comms::stopStereoDepth() {
+    LOGI("Stopping integrated stereo depth camera");
+    stereo_depth_.stop();
 }
 
 void Comms::updateFromBridge(const std::string& line) {
