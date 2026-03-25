@@ -1,5 +1,4 @@
 #include "stereo_depth.h"
-#include "comms.h"
 #include "helpers.h"
 
 #include <opencv2/opencv.hpp>
@@ -17,11 +16,11 @@ using namespace cv;
 
 // ── public ────────────────────────────────────────────────────────────────────
 
-void StereoDepth::start(Comms* comms, const std::string& calib_xml, int zmq_port) {
+void StereoDepth::start(int device_index, const std::string& calib_xml, int zmq_port) {
     if (run_.load()) return;
     if (thread_.joinable()) thread_.join();  // reap any previous (failed) thread
     run_.store(true);
-    thread_ = std::thread(&StereoDepth::loop, this, comms, calib_xml, zmq_port);
+    thread_ = std::thread(&StereoDepth::loop, this, device_index, calib_xml, zmq_port);
 }
 
 void StereoDepth::stop() {
@@ -31,7 +30,7 @@ void StereoDepth::stop() {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
+void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
   try {
     // Kill any leftover stereo_depth_zmq subprocess that may own the ZMQ port
     ::system("pkill -f stereo_depth_zmq 2>/dev/null; sleep 0.2");
@@ -60,8 +59,6 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
     }
 
     // ── Calibration ──────────────────────────────────────────────────────────
-    // Load pre-computed rectification maps and camera parameters from XML.
-    // The maps are confirmed float32 CV_32FC1 — load and use directly.
     FileStorage fs(calib_xml, FileStorage::READ);
     if (!fs.isOpened()) {
         LOGE("StereoDepth: cannot open calibration file: " << calib_xml);
@@ -83,7 +80,6 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
         return;
     }
 
-    // Maps are float32 — ensure CV_32F for cuda::GpuMat upload
     for (Mat* m : {&map1x, &map1y, &map2x, &map2y})
         if (m->type() != CV_32F) m->convertTo(*m, CV_32F);
 
@@ -105,15 +101,51 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
     const std::vector<float> hist_edges = {0.2f, 0.5f, 1.0f, 2.0f, 3.0f, 5.0f, 10.0f};
     std::vector<int> hist_bins(hist_edges.size(), 0);
 
+    // ── Camera open ──────────────────────────────────────────────────────────
+    // Opens its own VideoCapture — independent from the detection camera.
+    VideoCapture cap;
+    auto openStereoCamera = [&]() -> bool {
+        while (run_.load()) {
+            cap.release();
+            cap.open(device_index, CAP_V4L2);
+            cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
+            cap.set(CAP_PROP_FRAME_WIDTH,  2560);
+            cap.set(CAP_PROP_FRAME_HEIGHT,  720);
+            cap.set(CAP_PROP_FPS, 30);
+            cap.set(CAP_PROP_BUFFERSIZE, 1);
+            if (cap.isOpened()) {
+                LOGI("StereoDepth: stereo camera opened on device " << device_index
+                     << " at " << cap.get(CAP_PROP_FRAME_WIDTH) << "x"
+                     << cap.get(CAP_PROP_FRAME_HEIGHT)
+                     << " @ " << cap.get(CAP_PROP_FPS) << "fps");
+                return true;
+            }
+            LOGW("StereoDepth: camera device " << device_index << " not available — retrying in 3s");
+            for (int i = 0; i < 30 && run_.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        return false;
+    };
+
+    if (!openStereoCamera()) return;
+
     // ── Main loop ────────────────────────────────────────────────────────────
-    // Frames are pushed by ObjectDetection (which owns the stereo camera).
-    int dbg_frame = 0;
+    int dbg_frame  = 0;
+    int emptyCount = 0;
+    constexpr int MAX_EMPTY = 30;
+
     while (run_.load()) {
         Mat frame;
-        if (!comms->getLatestStereoFrame(frame)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        cap >> frame;
+        if (frame.empty()) {
+            if (++emptyCount >= MAX_EMPTY) {
+                LOGW("StereoDepth: camera lost — reconnecting");
+                if (!openStereoCamera()) return;
+                emptyCount = 0;
+            }
             continue;
         }
+        emptyCount = 0;
 
         // Log frame dimensions on first frame
         if (dbg_frame == 0)
@@ -132,11 +164,7 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
         cvtColor(right, grayR, COLOR_BGR2GRAY);
         cuda::GpuMat d_grayL(grayL), d_grayR(grayR);
 
-        // Rectify.
-        // When swap_lr: cam2 (physical left) is in the LEFT frame half, cam1 in the RIGHT.
-        // We swap maps so each half gets the maps for its actual camera, and d_rectL
-        // ends up as cam2 (which must be the "left" input to StereoBM for positive disparity).
-        const bool swap_lr = false;  // set true if physical left cam appears in the right frame half
+        const bool swap_lr = false;
         cuda::GpuMat d_rectL, d_rectR;
         cuda::remap(d_grayL, d_rectL,
                     swap_lr ? d_map2x : d_map1x,
@@ -145,31 +173,24 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
                     swap_lr ? d_map1x : d_map2x,
                     swap_lr ? d_map1y : d_map2y, INTER_LINEAR);
 
-        // Compute disparity
         cuda::GpuMat d_disp;
         stereo->compute(d_rectL, d_rectR, d_disp);
         Mat disp;
         d_disp.download(disp);
 
-        // Smooth and mask invalid pixels.
-        // cuda::createStereoBM returns CV_8UC1 with pixel-disparity values directly —
-        // NOT scaled ×16 like CPU StereoBM. Valid range is [1, numDisparities).
         if (blurKSize > 1) medianBlur(disp, disp, blurKSize);
         Mat mask = (disp > 0) & (disp < numDisparities);
         disp.setTo(0, ~mask);
 
-        // Colourised disparity visualisation
         Mat disp_vis;
         disp.convertTo(disp_vis, CV_8U, 255.0 / numDisparities);
         applyColorMap(disp_vis, disp_vis, COLORMAP_JET);
 
-        // Depth map — disp values are already in pixels, no ÷16 needed.
         Mat disp_f, depth;
         disp.convertTo(disp_f, CV_32F);
         depth = (f * B) / (disp_f + 1e-6f);
         depth.setTo(0, disp_f <= 0);
 
-        // Centre-point depth annotation — geometric centre of the disparity image.
         int scx = disp.cols / 2, scy = disp.rows / 2;
         float dval    = depth.at<float>(scy, scx);
         float disp_px = disp_f.at<float>(scy, scx);
@@ -185,7 +206,6 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
         putText(disp_vis, oss.str(), Point(10, 30),
                 FONT_HERSHEY_SIMPLEX, 1.0, Scalar(255, 255, 255), 2, LINE_AA);
 
-        // Depth histogram bar chart
         std::fill(hist_bins.begin(), hist_bins.end(), 0);
         for (int y = 0; y < depth.rows; ++y) {
             const float* row = depth.ptr<float>(y);
@@ -216,11 +236,9 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
                     FONT_HERSHEY_PLAIN, 1.2, Scalar(240, 240, 240), 1, LINE_AA);
         }
 
-        // Scale down 0.5x before encoding — reduces network traffic ~4x
         Mat disp_small;
         resize(disp_vis, disp_small, Size(), 0.5, 0.5, INTER_LINEAR);
 
-        // Publish JPEG via ZMQ (quality 60 — adequate for depth visualisation)
         std::vector<uchar> buf;
         std::vector<int> enc_params = {IMWRITE_JPEG_QUALITY, 60};
         imencode(".jpg", disp_small, buf, enc_params);
@@ -231,6 +249,7 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
         } catch (const zmq::error_t&) {}
     }
 
+    cap.release();
     pub.close();
     ctx.close();
     LOGI("StereoDepth: thread stopped");

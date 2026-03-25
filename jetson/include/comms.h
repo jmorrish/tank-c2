@@ -95,14 +95,9 @@ public:
     struct SlamPose { float x=0, y=0, theta=0; bool valid=false; };
     SlamPose getSlamPose() const;
 
-    // Stereo depth camera (integrated — replaces external stereo_depth_zmq subprocess)
-    void startStereoDepth();
+    // Stereo depth camera (integrated — runs its own VideoCapture independently)
+    void startStereoDepth(int device_index = 2);
     void stopStereoDepth();
-
-    // Shared stereo frame: ObjectDetection pushes full 2560×720 frames here;
-    // StereoDepth consumes them (avoids opening the camera twice).
-    void putStereoFrame(const cv::Mat& frame);
-    bool getLatestStereoFrame(cv::Mat& out) const;
 
 private:
     // Control TCP
@@ -192,11 +187,6 @@ private:
 
     // Stereo depth camera instance
     StereoDepth stereo_depth_;
-
-    // Shared stereo frame buffer (written by ObjectDetection, read by StereoDepth)
-    mutable std::mutex      stereo_frame_mtx_;
-    cv::Mat                 latest_stereo_frame_;
-    mutable std::atomic<bool> stereo_frame_ready_{false};
 
     // Mission state
     mutable std::mutex mission_mtx_;

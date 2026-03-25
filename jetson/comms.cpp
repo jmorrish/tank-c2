@@ -1377,13 +1377,13 @@ void Comms::stopSlamBridge() {
 
 // ── Stereo depth camera ───────────────────────────────────────────────────────
 
-void Comms::startStereoDepth() {
+void Comms::startStereoDepth(int device_index) {
     if (stereo_depth_.running()) {
         LOGI("StereoDepth already running");
         return;
     }
-    LOGI("Starting integrated stereo depth camera");
-    stereo_depth_.start(this);   // pass Comms* so thread reads shared frames
+    LOGI("Starting stereo depth camera on device " << device_index);
+    stereo_depth_.start(device_index);
 }
 
 void Comms::stopStereoDepth() {
@@ -1391,20 +1391,6 @@ void Comms::stopStereoDepth() {
     stereo_depth_.stop();
 }
 
-void Comms::putStereoFrame(const cv::Mat& frame) {
-    std::lock_guard<std::mutex> lk(stereo_frame_mtx_);
-    latest_stereo_frame_ = frame.clone();
-    stereo_frame_ready_.store(true);
-}
-
-bool Comms::getLatestStereoFrame(cv::Mat& out) const {
-    if (!stereo_frame_ready_.load()) return false;
-    std::lock_guard<std::mutex> lk(stereo_frame_mtx_);
-    if (latest_stereo_frame_.empty()) return false;
-    out = latest_stereo_frame_.clone();
-    stereo_frame_ready_.store(false);
-    return true;
-}
 
 void Comms::updateFromBridge(const std::string& line) {
     auto j = nlohmann::json::parse(line);
