@@ -37,6 +37,10 @@ public:
     void stop();
     bool isRunning() const { return run_.load(); }
 
+    // Tell detection which device index is the stereo camera so it is skipped
+    // during automatic camera scanning (set before start()).
+    void setStereoIndex(int idx) { stereo_cam_index_ = idx; }
+
     // Called from Comms thread to request a target switch (thread-safe).
     void setTargetPerson(int person_id) { pending_target_person_.store(person_id); }
 
@@ -58,6 +62,7 @@ private:
 
     std::string engine_path_;
     int cam1_index_;
+    int stereo_cam_index_ = -1;  // device index to skip during scan (it's the stereo cam)
     std::string cam2_rtsp_;
     bool headless_;
     AtomicLatest<TargetMsg>& bus_;

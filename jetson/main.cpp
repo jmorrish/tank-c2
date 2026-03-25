@@ -97,20 +97,20 @@ int main(int argc, char** argv){
 
     // Auto-detect cameras if not overridden on command line.
     // The stereo camera is identified by its unique 2560×720 capability.
-    // Falls back to fixed defaults (detect=0, stereo=2) if probing fails.
+    // If stereo is missing: stereo depth is disabled (detection still runs).
+    // If detect is missing: ObjectDetection scans at runtime.
     if (cam_detect < 0 || cam_stereo < 0) {
-        int found_detect, found_stereo;
-        if (findCameras(found_detect, found_stereo)) {
-            if (cam_detect < 0) cam_detect = found_detect;
-            if (cam_stereo < 0) cam_stereo = found_stereo;
-        } else {
-            LOGW("Camera auto-detect failed — falling back to detect=0 stereo=2");
-            if (cam_detect < 0) cam_detect = 0;
-            if (cam_stereo < 0) cam_stereo = 2;
-        }
+        int found_detect = -1, found_stereo = -1;
+        findCameras(found_detect, found_stereo);  // sets what it finds; return ignored
+        if (cam_detect < 0) cam_detect = found_detect;
+        if (cam_stereo < 0) cam_stereo = found_stereo;
+        if (cam_stereo < 0)
+            LOGW("No stereo camera found — stereo depth disabled");
+        if (cam_detect < 0)
+            LOGW("No detection camera found at startup — will scan at runtime");
     }
-    LOGI("Detection camera: device " << cam_detect
-         << "   Stereo camera: device " << cam_stereo);
+    LOGI("Detection camera: " << (cam_detect >= 0 ? "device " + std::to_string(cam_detect) : "none (runtime scan)")
+         << "   Stereo camera: " << (cam_stereo >= 0 ? "device " + std::to_string(cam_stereo) : "disabled"));
 
     // Comms — hardware connections are non-fatal; rx threads reconnect automatically
     Comms comms;
@@ -135,13 +135,17 @@ int main(int argc, char** argv){
     // SLAM bridge — connects to slam_bridge.py:9997 in background (non-fatal)
     comms.startSlamBridge();
 
-    // Stereo depth — opens its own camera independently
-    comms.startStereoDepth(cam_stereo);
+    // Stereo depth — opens its own camera independently (skipped if none found)
+    if (cam_stereo >= 0)
+        comms.startStereoDepth(cam_stereo);
+    else
+        LOGI("Stereo depth not started (no stereo camera detected)");
 
     // Shared bus: detection -> movement
     AtomicLatest<TargetMsg> bus;
 
     ObjectDetection det(engine_path, cam_detect, CAM2_RTSP, headless, bus, &comms, cfg);
+    det.setStereoIndex(cam_stereo);          // skip stereo device during camera scan
     comms.setObjectDetection(&det);  // wire set_target: command dispatch
     if (!det.start()){
         LOGE("Failed to start ObjectDetection");

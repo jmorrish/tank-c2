@@ -368,24 +368,61 @@ void ObjectDetection::mainLoop(){
     cv::VideoCapture cap;
     constexpr int CAM_RETRY_SEC = 3;
 
+    // Returns true if device idx accepts 2560×720 (i.e. it is the stereo camera).
+    // Returns false if the device can't be opened or doesn't support that resolution.
+    auto isStereoDevice = [](int idx) -> bool {
+        cv::VideoCapture probe(idx, cv::CAP_V4L2);
+        if (!probe.isOpened()) return false;
+        probe.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+        probe.set(cv::CAP_PROP_FRAME_WIDTH,  2560);
+        probe.set(cv::CAP_PROP_FRAME_HEIGHT,  720);
+        int w = (int)probe.get(cv::CAP_PROP_FRAME_WIDTH);
+        int h = (int)probe.get(cv::CAP_PROP_FRAME_HEIGHT);
+        probe.release();
+        return (w == 2560 && h == 720);
+    };
+
+    // Open device idx as detection camera (640×480 MJPEG). Updates cam1_index_ on success.
+    auto tryOpen = [&](int idx) -> bool {
+        cap.release();
+        cap.open(idx, cv::CAP_V4L2);
+        // Let the camera negotiate its own format/resolution (avoids slow MJPEG
+        // decode overhead from forced 1280×720 MJPG — camera defaults to 640×480
+        // which is fast to decode and sufficient for YOLO's 640×640 input).
+        cap.set(cv::CAP_PROP_FPS, 30);
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 4);
+        if (cap.isOpened()) {
+            LOGI("cam1: opened index " << idx << " at "
+                 << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
+                 << cap.get(cv::CAP_PROP_FRAME_HEIGHT)
+                 << " @ " << cap.get(cv::CAP_PROP_FPS) << "fps");
+            cam1_index_ = idx;
+            return true;
+        }
+        return false;
+    };
+
     auto openCam = [&]() -> bool {
-        while (run_.load()){
-            cap.release();
-            // Open stereo camera with V4L2 + MJPEG at full side-by-side resolution.
-            cap.open(cam1_index_, cv::CAP_V4L2);
-            cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-            cap.set(cv::CAP_PROP_FRAME_WIDTH,  640);
-            cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-            cap.set(cv::CAP_PROP_FPS, 30);
-            cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-            if (cap.isOpened()){
-                LOGI("cam1: opened index " << cam1_index_ << " at "
-                     << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
-                     << cap.get(cv::CAP_PROP_FRAME_HEIGHT)
-                     << " @ " << cap.get(cv::CAP_PROP_FPS) << "fps");
+        while (run_.load()) {
+            // 1. Fast path: try the last-known detection camera index.
+            if (cam1_index_ >= 0 && cam1_index_ != stereo_cam_index_ && tryOpen(cam1_index_))
                 return true;
+
+            // 2. Scan all V4L2 devices — skip the stereo cam index and any device
+            //    that probes as a 2560×720 stereo camera.
+            LOGI("cam1: scanning devices 0-7 for detection camera...");
+            bool found = false;
+            for (int i = 0; i < 8 && run_.load(); ++i) {
+                if (i == stereo_cam_index_) continue;
+                if (isStereoDevice(i)) {
+                    LOGI("cam1: device " << i << " is stereo cam — skipping");
+                    continue;
+                }
+                if (tryOpen(i)) { found = true; break; }
             }
-            LOGW("cam1: not available (index " << cam1_index_ << ") — retrying in " << CAM_RETRY_SEC << "s");
+            if (found) return true;
+
+            LOGW("cam1: no detection camera found — retrying in " << CAM_RETRY_SEC << "s");
             for (int i = 0; i < CAM_RETRY_SEC * 10 && run_.load(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
