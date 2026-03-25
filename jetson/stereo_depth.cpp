@@ -130,13 +130,21 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
     if (!openStereoCamera()) return;
 
     // ── Main loop ────────────────────────────────────────────────────────────
+    // Process at most STEREO_MAX_FPS to avoid GPU contention with TensorRT YOLO.
+    // All camera frames are read (draining the V4L2 buffer) but CUDA work is skipped
+    // on frames that arrive faster than the target interval.
+    constexpr float STEREO_MAX_FPS        = 5.0f;
+    constexpr int   STEREO_INTERVAL_MS    = static_cast<int>(1000.0f / STEREO_MAX_FPS);
+    auto stereo_last_proc = std::chrono::steady_clock::now()
+                            - std::chrono::milliseconds(STEREO_INTERVAL_MS);
+
     int dbg_frame  = 0;
     int emptyCount = 0;
     constexpr int MAX_EMPTY = 30;
 
     while (run_.load()) {
         Mat frame;
-        cap >> frame;
+        cap >> frame;   // always read — keeps V4L2 buffer drained
         if (frame.empty()) {
             if (++emptyCount >= MAX_EMPTY) {
                 LOGW("StereoDepth: camera lost — reconnecting");
@@ -146,6 +154,13 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
             continue;
         }
         emptyCount = 0;
+
+        // Skip CUDA processing if we haven't waited long enough
+        auto now_t = std::chrono::steady_clock::now();
+        int elapsed_ms = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(now_t - stereo_last_proc).count());
+        if (elapsed_ms < STEREO_INTERVAL_MS) continue;
+        stereo_last_proc = now_t;
 
         // Log frame dimensions on first frame
         if (dbg_frame == 0)
