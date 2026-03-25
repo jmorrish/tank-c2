@@ -374,8 +374,8 @@ void ObjectDetection::mainLoop(){
             // Open stereo camera with V4L2 + MJPEG at full side-by-side resolution.
             cap.open(cam1_index_, cv::CAP_V4L2);
             cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-            cap.set(cv::CAP_PROP_FRAME_WIDTH,  1280);
-            cap.set(cv::CAP_PROP_FRAME_HEIGHT,  720);
+            cap.set(cv::CAP_PROP_FRAME_WIDTH,  640);
+            cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
             cap.set(cv::CAP_PROP_FPS, 30);
             cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
             if (cap.isOpened()){
