@@ -49,6 +49,7 @@ public:
 
     // IMU latest YPR
     bool getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) const;
+    bool getLatestPtuYPR(float& yaw, float& pitch, float& roll, double& age_ms) const;
 
     // GPS latest
     bool getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const;
@@ -120,11 +121,17 @@ private:
     std::atomic<bool> sensor_rxRun_{false};
     std::mutex  sensor_send_mtx_;
 
-    // IMU latest
+    // Body IMU latest
     std::atomic<float> imu_yaw_{std::numeric_limits<float>::quiet_NaN()};
     std::atomic<float> imu_pitch_{std::numeric_limits<float>::quiet_NaN()};
     std::atomic<float> imu_roll_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<int64_t> imu_stamp_ns_{0}; // steady_clock::now().time_since_epoch().count()
+    std::atomic<int64_t> imu_stamp_ns_{0};
+
+    // PTU IMU latest
+    std::atomic<float> ptu_yaw_{std::numeric_limits<float>::quiet_NaN()};
+    std::atomic<float> ptu_pitch_{std::numeric_limits<float>::quiet_NaN()};
+    std::atomic<float> ptu_roll_{std::numeric_limits<float>::quiet_NaN()};
+    std::atomic<int64_t> ptu_imu_stamp_ns_{0};
 
     // GPS latest (mutex-protected: GPSData is too large for a lock-free atomic)
     mutable std::mutex gps_mtx_;

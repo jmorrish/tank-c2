@@ -376,7 +376,7 @@ void ObjectDetection::mainLoop(){
             cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
             cap.set(cv::CAP_PROP_FRAME_WIDTH,  2560);
             cap.set(cv::CAP_PROP_FRAME_HEIGHT,  720);
-            cap.set(cv::CAP_PROP_FPS, 10);
+            cap.set(cv::CAP_PROP_FPS, 30);  // 2560x720 MJPEG only supports 30fps — requesting 10 caused V4L2 to fall back to YUV at 3fps
             cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
             if (cap.isOpened()){
                 LOGI("cam1: opened index " << cam1_index_ << " at "

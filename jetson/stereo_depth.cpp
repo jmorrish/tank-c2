@@ -49,6 +49,16 @@ void StereoDepth::loop(Comms* comms, std::string calib_xml, int zmq_port) {
         return;
     }
 
+    // Second ZMQ PUB — rectified stereo frame pairs for stereo_ros2_bridge (RTAB-Map)
+    zmq::socket_t stereo_pub(ctx, ZMQ_PUB);
+    stereo_pub.set(zmq::sockopt::sndhwm, 2);  // drop old frames if bridge is slow
+    try {
+        stereo_pub.bind("tcp://*:5557");
+        LOGI("StereoDepth: ZMQ stereo PUB bound on port 5557");
+    } catch (const zmq::error_t& e) {
+        LOGW("StereoDepth: ZMQ stereo bind failed: " << e.what() << " (RTAB-Map bridge unavailable)");
+    }
+
     // ── Calibration ──────────────────────────────────────────────────────────
     // Load pre-computed rectification maps and camera parameters from XML.
     // The maps are confirmed float32 CV_32FC1 — load and use directly.

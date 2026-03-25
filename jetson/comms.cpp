@@ -191,6 +191,16 @@ bool Comms::getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) 
     return true;
 }
 
+bool Comms::getLatestPtuYPR(float& yaw, float& pitch, float& roll, double& age_ms) const{
+    yaw   = ptu_yaw_.load();
+    pitch = ptu_pitch_.load();
+    roll  = ptu_roll_.load();
+    int64_t stamp = ptu_imu_stamp_ns_.load();
+    if (stamp == 0 || !isfinite(yaw) || !isfinite(pitch) || !isfinite(roll)) return false;
+    age_ms = (now_ns() - stamp) / 1e6;
+    return true;
+}
+
 bool Comms::getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const{
     GPSData gps;
     { std::lock_guard<std::mutex> lk(gps_mtx_); gps = gps_; }
@@ -252,6 +262,14 @@ void Comms::controlRxLoop(Comms* self){
                             self->encoders_.store(enc);
                             self->enc_stamp_ns_.store(now_ns());
                         }
+                    } else if (line.rfind("PTU_YPR", 0) == 0) {
+                        float y, p, r;
+                        if (std::sscanf(line.c_str() + 7, "%f %f %f", &y, &p, &r) == 3) {
+                            self->ptu_yaw_.store(y);
+                            self->ptu_pitch_.store(p);
+                            self->ptu_roll_.store(r);
+                            self->ptu_imu_stamp_ns_.store(now_ns());
+                        }
                     }
                     // All other lines (ACKs, debug prints) are silently ignored
                 }
@@ -298,13 +316,21 @@ void Comms::sensorRxLoop(Comms* self){
                 std::string line = partial.substr(0, pos);
                 partial.erase(0, pos+1);
                 // Parse line
-                if (line.rfind("YPR", 0) == 0){
+                if (line.rfind("YPR", 0) == 0 && line.rfind("PTU_YPR", 0) != 0){
                     float y, p, r;
                     if (std::sscanf(line.c_str()+3, "%f %f %f", &y, &p, &r) == 3){
                         self->imu_yaw_.store(y);
                         self->imu_pitch_.store(p);
                         self->imu_roll_.store(r);
                         self->imu_stamp_ns_.store(now_ns());
+                    }
+                } else if (line.rfind("PTU_YPR", 0) == 0){
+                    float y, p, r;
+                    if (std::sscanf(line.c_str()+7, "%f %f %f", &y, &p, &r) == 3){
+                        self->ptu_yaw_.store(y);
+                        self->ptu_pitch_.store(p);
+                        self->ptu_roll_.store(r);
+                        self->ptu_imu_stamp_ns_.store(now_ns());
                     }
                 } else if (line.rfind("TOF", 0) == 0){
                     float d;
@@ -323,7 +349,7 @@ void Comms::sensorRxLoop(Comms* self){
                     while (std::getline(ss, token, ',')) {
                         fields.push_back(token);
                     }
-                    if (fields.size() != 15 || (fields[0] != "$GPGGA" && fields[0] != "$GNGGA")) continue;
+                    if ((fields.size() < 14 || fields.size() > 15) || (fields[0] != "$GPGGA" && fields[0] != "$GNGGA")) continue;
 
                     std::string lat_str = fields[2];
                     std::string ns = fields[3];
