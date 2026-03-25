@@ -22,12 +22,14 @@ static bool findCameras(int& detect_cam, int& stereo_cam, int maxTest = 8) {
         cv::VideoCapture cap(i, cv::CAP_V4L2);
         if (!cap.isOpened()) continue;
 
-        // Try to negotiate 2560×720 MJPEG
+        // Probe for stereo by negotiating 2560×720 MJPEG and reading back
+        // the actual resolution the driver accepted.  If the driver rejects
+        // 2560×720 it will clamp to its native size, so we can tell them apart
+        // without permanently altering any device state — cap.release() clears
+        // the V4L2 fd before either camera is opened for real.
         cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
         cap.set(cv::CAP_PROP_FRAME_WIDTH,  2560);
         cap.set(cv::CAP_PROP_FRAME_HEIGHT,  720);
-        cap.set(cv::CAP_PROP_FPS, 30);
-
         int w = (int)cap.get(cv::CAP_PROP_FRAME_WIDTH);
         int h = (int)cap.get(cv::CAP_PROP_FRAME_HEIGHT);
         cap.release();

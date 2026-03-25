@@ -143,9 +143,10 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
     constexpr int MAX_EMPTY = 30;
 
     while (run_.load()) {
-        Mat frame;
-        cap >> frame;   // always read — keeps V4L2 buffer drained
-        if (frame.empty()) {
+        // grab() is cheap — just claims the V4L2 buffer slot, no MJPEG decode.
+        // We only call retrieve() (the expensive decode) when it's actually time
+        // to process, so the CPU never decodes the 25 frames/sec we throw away.
+        if (!cap.grab()) {
             if (++emptyCount >= MAX_EMPTY) {
                 LOGW("StereoDepth: camera lost — reconnecting");
                 if (!openStereoCamera()) return;
@@ -155,12 +156,14 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
         }
         emptyCount = 0;
 
-        // Skip CUDA processing if we haven't waited long enough
         auto now_t = std::chrono::steady_clock::now();
         int elapsed_ms = static_cast<int>(
             std::chrono::duration_cast<std::chrono::milliseconds>(now_t - stereo_last_proc).count());
-        if (elapsed_ms < STEREO_INTERVAL_MS) continue;
+        if (elapsed_ms < STEREO_INTERVAL_MS) continue;  // skip — no decode at all
         stereo_last_proc = now_t;
+
+        Mat frame;
+        if (!cap.retrieve(frame) || frame.empty()) continue;  // decode only now
 
         // Log frame dimensions on first frame
         if (dbg_frame == 0)
