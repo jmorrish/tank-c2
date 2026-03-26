@@ -10,8 +10,8 @@ Movement::Movement(Comms& comms, AtomicLatest<TargetMsg>& bus, const RuntimeConf
     panPID_.configure(cfg_.kp, cfg_.ki, cfg_.kd, cfg_.max_i);
     tiltPID_.configure(cfg_.kp, cfg_.ki, cfg_.kd, cfg_.max_i);
     // PI only for wheel feedback (no derivative)
-    leftWheelPI_.configure(cfg_.wheel_kp, cfg_.wheel_ki, 0.0f, 5000.0f);
-    rightWheelPI_.configure(cfg_.wheel_kp, cfg_.wheel_ki, 0.0f, 5000.0f);
+    leftWheelPI_.configure(cfg_.wheel_kp, cfg_.wheel_ki, 0.0f, cfg_.wheel_pi_max_i);
+    rightWheelPI_.configure(cfg_.wheel_kp, cfg_.wheel_ki, 0.0f, cfg_.wheel_pi_max_i);
 }
 
 Movement::~Movement(){ stop(); }
@@ -67,13 +67,13 @@ void Movement::loop(){
         // the horizon when the robot is on a slope.
         float yaw = 0, pitch = 0, roll = 0; double imu_age = 1e9;
         bool haveImu = comms_.getLatestYPR(yaw, pitch, roll, imu_age);
-        if (haveImu && imu_age < SENSOR_STALE_MS){
+        if (haveImu && imu_age < cfg_.sensor_stale_ms){
             dy -= pitch * cfg_.pixels_per_degree;
         }
 
         // --- PTU velocity control ---
         float panVel = 0, tiltVel = 0;
-        if (dist_pix <= CENTER_THRESHOLD){
+        if (dist_pix <= cfg_.center_threshold){
             if (std::fabs(lastPanVelo_) > 1e-2f || std::fabs(lastTiltVelo_) > 1e-2f){
                 LOGI("[PTU] Centered => zero velocity");
                 if (!comms_.sendPTUVelocity(0,0) && control_ok_)
@@ -84,11 +84,11 @@ void Movement::loop(){
             panVel  = panPID_.step(dx, dt);
             tiltVel = tiltPID_.step(dy, dt);
 
-            panVel  = std::clamp(panVel,  -MAX_SPEED, MAX_SPEED);
-            tiltVel = std::clamp(tiltVel, -MAX_SPEED, MAX_SPEED);
+            panVel  = std::clamp(panVel,  -cfg_.max_speed, cfg_.max_speed);
+            tiltVel = std::clamp(tiltVel, -cfg_.max_speed, cfg_.max_speed);
 
-            float dPan  = std::clamp(panVel  - lastPanVelo_,  -MAX_DELTA_VELO, MAX_DELTA_VELO);
-            float dTilt = std::clamp(tiltVel - lastTiltVelo_, -MAX_DELTA_VELO, MAX_DELTA_VELO);
+            float dPan  = std::clamp(panVel  - lastPanVelo_,  -cfg_.max_delta_velo, cfg_.max_delta_velo);
+            float dTilt = std::clamp(tiltVel - lastTiltVelo_, -cfg_.max_delta_velo, cfg_.max_delta_velo);
             panVel  = lastPanVelo_  + dPan;
             tiltVel = lastTiltVelo_ + dTilt;
 
@@ -103,8 +103,8 @@ void Movement::loop(){
 
             float panChange  = std::fabs(panVel  - lastPanVelo_);
             float tiltChange = std::fabs(tiltVel - lastTiltVelo_);
-            bool shouldSend  = (panChange > VELO_EPS || tiltChange > VELO_EPS) &&
-                               (std::fabs(panVel) > MIN_SPEED || std::fabs(tiltVel) > MIN_SPEED);
+            bool shouldSend  = (panChange > cfg_.velo_eps || tiltChange > cfg_.velo_eps) &&
+                               (std::fabs(panVel) > cfg_.min_speed || std::fabs(tiltVel) > cfg_.min_speed);
 
             if (shouldSend){
                 LOGI("[PTU] dx=" << dx << ", dy=" << dy
@@ -133,7 +133,7 @@ void Movement::loop(){
         double dist_age = 0.0;
         float d = comms_.getLatestDistance(&dist_age);
         int wheelSpeed = 0;
-        if (d > cfg_.follow_distance_m && d < 10.0f && dist_age < SENSOR_STALE_MS){
+        if (d > cfg_.follow_distance_m && d < cfg_.max_follow_distance_m && dist_age < cfg_.sensor_stale_ms){
             wheelSpeed = int((d - cfg_.follow_distance_m) * cfg_.wheel_gain_distance);
         }
 
@@ -147,13 +147,13 @@ void Movement::loop(){
 
         // --- Encoder closed-loop PI correction ---
         int encLeft = 0, encRight = 0; double enc_age = 1e9;
-        if (comms_.getLatestEncoders(encLeft, encRight, enc_age) && enc_age < SENSOR_STALE_MS){
+        if (comms_.getLatestEncoders(encLeft, encRight, enc_age) && enc_age < cfg_.sensor_stale_ms){
             left  += int(leftWheelPI_.step(float(left  - encLeft),  dt));
             right += int(rightWheelPI_.step(float(right - encRight), dt));
         }
 
-        left  = std::clamp(left,  -WHEEL_MAX_SPS, WHEEL_MAX_SPS);
-        right = std::clamp(right, -WHEEL_MAX_SPS, WHEEL_MAX_SPS);
+        left  = std::clamp(left,  -cfg_.wheel_max_sps, cfg_.wheel_max_sps);
+        right = std::clamp(right, -cfg_.wheel_max_sps, cfg_.wheel_max_sps);
 
         if (left != lastLeft_ || right != lastRight_){
             bool ok = comms_.sendWheels(left, right);

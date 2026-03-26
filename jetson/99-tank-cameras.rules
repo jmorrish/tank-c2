@@ -1,0 +1,26 @@
+# Tank C2 — Stable camera device symlinks
+#
+# Creates /dev/video-stereo and /dev/video-detect symlinks based on USB port
+# topology (busnum + devpath), which is stable across reboots even when device
+# indices change.
+#
+# Installation:
+#   sudo cp 99-tank-cameras.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+#
+# To find your USB port paths, run:
+#   udevadm info /dev/video0 | grep -E 'ATTRS\{(busnum|devpath)\}'
+#
+# Then update the busnum/devpath values below to match your hardware.
+# Only the first video device node per camera is symlinked (ATTR{index}=="0").
+#
+# NOTE: Adjust busnum and devpath for YOUR Jetson's USB topology.
+# The values below are placeholders — run the udevadm command above to find
+# the correct values for each camera.
+
+# Stereo camera (2560x720 side-by-side, "USB Camera" 1bcf:0b15) — hub port 2.3
+SUBSYSTEM=="video4linux", ATTR{index}=="0", ATTRS{busnum}=="1", ATTRS{devpath}=="2.3", SYMLINK+="video-stereo"
+
+# Detection camera (Razer Kiyo X, 1532:0e06) — hub port 2.1
+SUBSYSTEM=="video4linux", ATTR{index}=="0", ATTRS{busnum}=="1", ATTRS{devpath}=="2.1", SYMLINK+="video-detect"

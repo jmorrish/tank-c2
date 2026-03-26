@@ -1,0 +1,40 @@
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlanner2D"
+      tolerance: 0.25               # goal tolerance (metres)
+      allow_unknown: false           # don't plan through unknown space
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 3.0        # seconds
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05              # match SLAM Toolbox
+      track_unknown_space: true
+      rolling_window: false          # use full SLAM map
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true   # match SLAM Toolbox QoS
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          raytrace_max_range: 8.0
+          obstacle_max_range: 5.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.3        # robot half-width + safety margin
+        cost_scaling_factor: 5.0     # how quickly cost falls off from obstacles

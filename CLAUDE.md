@@ -29,28 +29,51 @@
 | Stereo calibration | `/home/james/stereo_calib/stereo_params_cuda.xml` (contains map1x/y, map2x/y, P1, T) |
 | Sensor Teensy sketch | `C:\Users\admin\Documents\Arduino\SENSOR_TEENSY\SENSOR_TEENSY.ino` |
 | Control Teensy sketch | `C:\Users\admin\Documents\Arduino\PTU_Wheel_IMU_ETH_NoStutt\PTU_Wheel_IMU_ETH_NoStutt.ino` |
+| Deploy script | `c:\python\tank-c2\deploy_phase4.py` (paramiko SFTP + cmake build) |
 
 ## Jetson Deploy Directory (`/home/james/YOLOv8-TensorRT/csrc/jetson/detect/`)
 **C++ source files:**
 | File | Purpose |
 |------|---------|
-| `main.cpp` | Entry point, arg parsing, subsystem startup |
-| `comms.cpp` / `include/comms.h` | All TCP comms: control/sensor Teensys, VPS IPC, SLAM bridge, stereo depth |
+| `main.cpp` | Entry point, arg parsing, subsystem startup, behavior registration |
+| `comms.cpp` / `include/comms.h` | All TCP comms: control/sensor Teensys, VPS IPC, SLAM bridge, stereo depth. Forwards IMU/GPS to slam_bridge for ROS2 publishing |
 | `object_detection.cpp` | YOLOv8 TensorRT inference, camera capture, BoTSORT tracking, person re-ID |
 | `stereo_depth.cpp` | CUDA StereoBM stereo depth, ZMQ PUB ports 5557 (ROS2) and 5558 (mjpeg_bridge) |
-| `movement.cpp` | PTU PID control, wheel follow-distance control |
+| `behavior_coordinator.cpp` | Behavior state machine: transitions, tick loop at ~500Hz, actuator zeroing |
+| `follow_behavior.cpp` | FollowBehavior: PID-based person tracking (PTU + wheels) extracted from old movement.cpp |
+| `mission_behavior.cpp` | MissionBehavior: wraps MissionRunner, owns thread, auto-transitions to STOPPED on complete |
+| `mission.cpp` / `include/mission.h` | MissionRunner: GPS waypoint navigation with sub-waypoint path planning and replanning |
+| `nav2_planner.cpp` / `include/nav2_planner.h` | Nav2Planner: requests obstacle-aware paths via slam_bridge TCP, falls back to direct GPS |
+| `sensor_store.cpp` / `include/sensor_store.h` | SensorStore with generic key-value slots for extensible sensor data |
+| `slam_link.cpp` / `include/slam_link.h` | Bidirectional TCP to slam_bridge.py (port 9997), sends/receives JSON lines |
+| `teensy_link.cpp` / `include/teensy_link.h` | Generic TCP link for Teensy connections (control + sensor) |
 | `runtime_config.cpp` | Runtime config load/save (`config.json` in working dir) |
 | `logger.cpp` | Logging helpers |
 | `include/config.h` | All compile-time defaults (IPs, ports, thresholds, paths) |
+| `include/behavior.h` | Behavior base class + StoppedBehavior, ManualBehavior inline implementations |
+| `include/behavior_coordinator.h` | BehaviorCoordinator class declaration |
+| `include/control_mode.h` | ControlMode enum: STOPPED, MANUAL, FOLLOW, MISSION |
+| `include/follow_behavior.h` | FollowBehavior class declaration |
+| `include/mission_behavior.h` | MissionBehavior class declaration |
+| `include/path_planner.h` | PathPlanner abstract interface + DirectGPSPlanner (straight-line fallback) |
+| `include/obstacle_utils.h` | Shared obstacle avoidance steering utility (suggestAvoidanceSteer) |
+| `include/helpers.h` | Free helper functions (steady_now_ns, etc.) |
 
 **Python / shell scripts:**
 | File | Purpose |
 |------|---------|
+| `start_tank.sh` | **Unified launcher** — starts all 6 subsystems, one Ctrl+C stops everything. Supports `--no-nav2` and `--no-ekf` flags |
 | `mjpeg_bridge.py` | MJPEG fan-out relay, port 8080. Subscribes to ZMQ 5558 for stereo disparity frames |
-| `slam_bridge.py` | ROS2 → TCP bridge, port 9997. Owns SLAM Toolbox lifecycle |
-| `slam_start.sh` | Starts ydlidar ROS2 driver + slam_bridge.py |
+| `slam_bridge.py` | ROS2 ↔ TCP bridge (port 9997). Owns SLAM Toolbox lifecycle, publishes /imu/data + /gps/fix, Nav2 ComputePathToPose action client, dynamic odom→base_link TF, GPS↔map coordinate conversion |
 | `web_interface.py` | (legacy / unused — Node.js VPS is the active web interface) |
 | `readdis.py` | Dev/debug script for reading distance sensor |
+
+**Config / launch files:**
+| File | Purpose |
+|------|---------|
+| `nav2_params.yaml` | Nav2 planner server config: SmacPlanner2D + global costmap (static + obstacle + inflation layers) |
+| `ekf_params.yaml` | robot_localization EKF config: fuses /odom + /imu/data. navsat_transform for GPS↔odom conversion |
+| `nav2_planner_launch.py` | ROS2 launch file for planner_server + lifecycle_manager (planner creates its own costmap internally) |
 | `slam_toolbox_params_odom.yaml` | SLAM Toolbox config with odometry enabled |
 | `slam_toolbox_params_no_odom.yaml` | SLAM Toolbox config without odometry |
 
@@ -85,12 +108,33 @@
 - Control Teensy TCP 192.168.1.177:23 — wheels + PTU (sends `LS<n>RS<n>`, `VP<pan>T<tilt>`, `P<pan>T<tilt>`; receives `ENC <l> <r>`, `PTU_YPR <y> <p> <r>`)
 - Sensor Teensy TCP 192.168.1.178:23 — IMU/GPS/TOF/encoders (sends `IMU_ON`, `IMU_RATE <hz>`; receives `YPR`, `ENC`, `TOF`, NMEA)
 - VPS IPC TCP port 9999 — status JSON + commands
-- SLAM bridge TCP port 9997 — scan + pose data
+- SLAM bridge TCP port 9997 — bidirectional JSON-line protocol (see below)
 - MJPEG stream port 8080 (mjpeg_bridge.py)
 - ZMQ PUB port 5557 — stereo rectified frames for ROS2/RTAB-Map
 - ZMQ PUB port 5558 — colourised disparity JPEG for mjpeg_bridge
 
+### SLAM Bridge TCP Protocol (port 9997)
+**C++ → slam_bridge (forwarded sensor data):**
+- `{"type":"imu_data","yaw":..,"pitch":..,"roll":..}` — BNO085 IMU, published as `/imu/data`
+- `{"type":"gps_data","lat":..,"lon":..,"alt":..,"quality":..,"sats":..}` — GPS fix, published as `/gps/fix` (1Hz)
+- `{"type":"gps_rmc","speed_knots":..,"course_deg":..}` — GPS speed/course for heading calibration
+- `{"type":"plan_path","from_lat":..,"from_lon":..,"to_lat":..,"to_lon":..}` — request Nav2 path
+
+**slam_bridge → C++:**
+- `{"type":"scan","ranges":[...],"angle_min":..,"angle_max":..}` — lidar scan data
+- `{"type":"slam_pose","x":..,"y":..,"theta":..}` — SLAM Toolbox pose in map frame
+- `{"type":"planned_path","ok":true,"waypoints":[[lat,lon],...]}` — Nav2 planned path result
+- `{"type":"planned_path","ok":false,"error":"..."}` — Nav2 planning failure
+
 ## Run Command
+**Preferred — unified launcher (starts everything):**
+```
+bash start_tank.sh              # full stack: lidar + SLAM + EKF + Nav2 + MJPEG + C++ app
+bash start_tank.sh --no-ekf     # skip EKF + navsat (use until wheel encoders are wired)
+bash start_tank.sh --no-nav2    # skip Nav2 planner
+```
+
+**Direct C++ app only (requires ROS2 stack already running):**
 ```
 ./yolov8 /home/james/YOLOv8-TensorRT/yolov8n.engine --auto-continue --headless
 ```
@@ -100,24 +144,68 @@ Optional: `--ptu-ip 192.168.1.177:23` `--sensor-ip 192.168.1.178:23` (these are 
 - Full comms stack: Jetson → VPS → browser WebSocket
 - Mobile-friendly dark web UI: map, mission planner, live telemetry, radar
 - MJPEG stream fan-out relay
-- Mission system: save/push/execute/abort/resume/skip waypoint, GPS navigation
+- Mission system: save/push/execute/abort/resume/skip waypoint, GPS navigation with obstacle-aware path planning
 - Person re-ID: BoTSORT, cosine similarity (threshold 0.75), persistent gallery
 - Web gallery: thumbnails, live updates, one-click follow, inline rename
 - Session auth: /login, 7-day cookie, WS auth via 30s one-time token
 - YDLIDAR X3: 360° radar + obstacle avoidance via SLAM bridge
 - SLAM: ROS2 ydlidar_ros2_driver → SLAM Toolbox → slam_bridge.py TCP 9997
 - Odometry auto-plug-and-play: slam_bridge.py activates odom when encoders fresh
+- **Behavior architecture**: BehaviorCoordinator state machine with FollowBehavior, MissionBehavior, StoppedBehavior, ManualBehavior. Replaces old movement.cpp
+- **Generic sensor slots**: SensorStore.setGeneric(key, value) — auto-serialized to status JSON
+- **Nav2 path planning**: SmacPlanner2D on SLAM costmap. slam_bridge.py hosts ComputePathToPose action client. C++ requests paths via TCP, gets GPS sub-waypoints back
+- **IMU/GPS → ROS2**: comms.cpp forwards sensor data to slam_bridge, which publishes /imu/data and /gps/fix
+- **Dynamic odom→base_link TF**: Published by slam_bridge (or EKF when enabled) instead of static identity
+- **GPS↔map conversion**: Tangent-plane approximation with heading offset rotation in slam_bridge.py
+- **GPS heading auto-calibration**: EMA filter comparing GPS course to IMU yaw when moving
+- **robot_localization EKF**: Fuses wheel odometry + IMU (config ready, use `--no-ekf` until encoders wired)
+- **Unified launcher**: `start_tank.sh` starts all 6 subsystems, one Ctrl+C stops everything
 
 ## Pending / Not Yet Wired
-- Wheel encoders — sketch ready, hardware not yet wired
+- Wheel encoders — sketch ready, hardware not yet wired. **Use `--no-ekf` flag until wired** (EKF has no velocity source without them)
 - PTU IMU — control Teensy sketch has it on Serial5; `controlRxLoop` parses `PTU_YPR` but this was reverted from deployed binary pending FPS fix
-- IMU/GPS → slam_bridge sensor fusion (robot_localization EKF planned)
 - RTAB-Map 3D mapping via ZMQ port 5557 (stereo_depth.cpp publishes rectified pairs)
+
+## Architecture: Behavior System
+Behaviors are registered with BehaviorCoordinator and activated via `requestTransition(ControlMode)`. Transitions are deferred to the coordinator's loop thread via atomic exchange — no mutex needed. Every transition: `onExit()` → zero all actuators → `onEnter()`.
+
+**Adding a new behavior:**
+1. Add enum to `include/control_mode.h`
+2. Create `new_behavior.cpp` + header implementing `Behavior` interface
+3. Register in `main.cpp`: `coordinator.addBehavior(ControlMode::NEW, &newBehavior);`
+4. Add web command in `comms.cpp`: `coordinator_->requestTransition(ControlMode::NEW);`
+
+**Adding a new sensor:**
+1. In comms.cpp sensor callback: `sensors_.setGeneric("name", value);`
+2. Auto-appears in status JSON under `sensors.name`
+
+## Architecture: Nav2 Path Planning
+Nav2 runs as a **planning service** alongside SLAM Toolbox. The C++ app keeps wheel control — Nav2 only answers "what's the best route?"
+
+**Data flow:** C++ sends `plan_path` JSON → slam_bridge.py → Nav2 `ComputePathToPose` action → planned path → subsampled to GPS waypoints every ~1m → returned as `planned_path` JSON → C++ navigates sub-waypoints sequentially.
+
+**Replanning triggers:** Path age > 10s, `Nav2Planner::isPathValid()` returns false (obstacle in path, robot deviation > 3m, path stale > 30s).
+
+**Fallback:** If Nav2 is unavailable, `Nav2Planner::planPath()` falls back to direct GPS (same as `DirectGPSPlanner`).
+
+**TF tree:** `map → odom → base_link → laser_frame`. SLAM Toolbox publishes `map → odom`, slam_bridge (or EKF) publishes `odom → base_link`, static TF for `base_link → laser_frame`.
+
+## ROS2 Dependencies (Jetson)
+```bash
+sudo apt install ros-humble-nav2-planner ros-humble-nav2-costmap-2d \
+  ros-humble-nav2-lifecycle-manager ros-humble-nav2-msgs \
+  ros-humble-robot-localization
+```
+Plus existing: `ros-humble-slam-toolbox`, `ydlidar_ros2_driver` (built from source in `~/ros2_ws`)
 
 ## Known Issues / Gotchas
 - **Stereo camera modes**: Camera is opened at 2560×720 MJPEG. Full frame → stereo depth, left half (1280×720) → detection. **2560×720 MJPEG only supports 30fps** — requesting any other fps causes V4L2 to fall back to raw YUV at 3fps. Always use `CAP_PROP_FPS, 30` for this resolution. Calibration: `/home/james/stereo_calib/stereo_params_cuda.xml`.
 - **Rebuilding = recompiles everything**: `cmake --build build` recompiles all changed source files, not just comms.cpp. If object_detection.cpp has in-progress changes they will be compiled in too.
 - **PTU_YPR parsing**: Added to local `comms.cpp` `controlRxLoop` but currently reverted from Jetson until FPS issue is resolved.
+- **EKF without encoders**: Don't run robot_localization EKF until wheel encoders are physically wired — EKF has no velocity/position source without them. Use `start_tank.sh --no-ekf`.
+- **GPS cold start drift**: navsat_transform_node logs datum recalculation warnings for 2-5 minutes after GPS cold start as altitude/position converge. This is normal — it stabilizes.
+- **Nav2 costmap node**: Do NOT launch a standalone `nav2_costmap_2d` node — `planner_server` creates its own costmap internally. The lifecycle manager only needs to manage `['planner_server']`.
+- **slam_bridge.py init order**: `_dyn_tf_broadcaster` must be created before any call to `_publish_odom_tf()` in `__init__`.
 
 ## Key Technical Notes
 - BNO085: Adafruit_BNO08x supports **one UART instance only** (global HAL state). Use one per Teensy.

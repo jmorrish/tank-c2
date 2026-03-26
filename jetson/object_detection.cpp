@@ -1,7 +1,5 @@
 #include "object_detection.h"
 #include "comms.h"
-
-#include "config.h"
 #include "helpers.h"
 
 #include "yolov8.hpp"
@@ -26,14 +24,14 @@ static void onMouse(int event, int x, int y, int, void* userdata){
 }
 
 ObjectDetection::ObjectDetection(const std::string& engine_path,
-                                 int cam1_index,
+                                 const std::string& cam1_device,
                                  const std::string& cam2_rtsp,
                                  bool headless,
                                  AtomicLatest<TargetMsg>& bus,
                                  Comms* comms,
                                  const RuntimeConfig& cfg)
 : engine_path_(engine_path)
-, cam1_index_(cam1_index)
+, cam1_device_(cam1_device)
 , cam2_rtsp_(cam2_rtsp)
 , headless_(headless)
 , bus_(bus)
@@ -49,9 +47,10 @@ bool ObjectDetection::start(){
     main_thread_ = std::thread(&ObjectDetection::mainLoop, this);
 
     try {
-        zmq_pub_.bind("tcp://127.0.0.1:5555");
+        std::string zmq_addr = "tcp://127.0.0.1:" + std::to_string(cfg_.zmq_detection_port);
+        zmq_pub_.bind(zmq_addr);
         zmq_ready_ = true;
-        LOGI("ZMQ frame publisher started on tcp://127.0.0.1:5555");
+        LOGI("ZMQ frame publisher started on " << zmq_addr);
     } catch (const zmq::error_t& e) {
         LOGE("ZMQ bind failed: " << e.what());
     }
@@ -126,17 +125,17 @@ float ObjectDetection::cosineSim(const std::vector<float>& a, const std::vector<
 }
 
 void ObjectDetection::loadGallery(){
-    ::mkdir(TARGETS_DIR.c_str(), 0755);
+    ::mkdir(cfg_.targets_dir.c_str(), 0755);
 
     // Read next_id counter
     {
-        std::ifstream cf(TARGETS_DIR + "/next_id.txt");
+        std::ifstream cf(cfg_.targets_dir + "/next_id.txt");
         if (cf.is_open()) cf >> next_id_;
         if (next_id_ < 1) next_id_ = 1;
     }
 
     // Load each numeric subdirectory
-    DIR* dir = ::opendir(TARGETS_DIR.c_str());
+    DIR* dir = ::opendir(cfg_.targets_dir.c_str());
     if (!dir) return;
     struct dirent* ent;
     while ((ent = ::readdir(dir)) != nullptr) {
@@ -144,7 +143,7 @@ void ObjectDetection::loadGallery(){
         if (name.empty() || name[0] == '.') continue;
         if (!std::all_of(name.begin(), name.end(), ::isdigit)) continue;
 
-        std::string embed_path = TARGETS_DIR + "/" + name + "/embed.bin";
+        std::string embed_path = cfg_.targets_dir + "/" + name + "/embed.bin";
         std::ifstream ef(embed_path, std::ios::binary);
         if (!ef.is_open()) continue;
 
@@ -156,7 +155,7 @@ void ObjectDetection::loadGallery(){
         if ((size_t)ef.gcount() != sizeof(float) * FEATURE_DIM) continue;
 
         // Load extra learned embeddings (may not exist yet)
-        std::string gal_path = TARGETS_DIR + "/" + name + "/embed_gallery.bin";
+        std::string gal_path = cfg_.targets_dir + "/" + name + "/embed_gallery.bin";
         std::ifstream gf(gal_path, std::ios::binary);
         if (gf.is_open()) {
             std::vector<float> emb(FEATURE_DIM);
@@ -167,7 +166,7 @@ void ObjectDetection::loadGallery(){
         }
 
         // Load display name (optional)
-        std::string name_path = TARGETS_DIR + "/" + name + "/name.txt";
+        std::string name_path = cfg_.targets_dir + "/" + name + "/name.txt";
         std::ifstream nfname(name_path);
         if (nfname.is_open()) {
             std::getline(nfname, rec.name);
@@ -183,11 +182,11 @@ void ObjectDetection::loadGallery(){
     ::closedir(dir);
 
     std::lock_guard<std::mutex> lk(gallery_mtx_);
-    LOGI("Gallery loaded: " << gallery_.size() << " person(s) from " << TARGETS_DIR);
+    LOGI("Gallery loaded: " << gallery_.size() << " person(s) from " << cfg_.targets_dir);
 }
 
 void ObjectDetection::saveEmbedding(const PersonRecord& p) const {
-    std::string dir = TARGETS_DIR + "/" + std::to_string(p.id);
+    std::string dir = cfg_.targets_dir + "/" + std::to_string(p.id);
     ::mkdir(dir.c_str(), 0755);
     std::ofstream f(dir + "/embed.bin", std::ios::binary);
     if (f.is_open())
@@ -196,9 +195,9 @@ void ObjectDetection::saveEmbedding(const PersonRecord& p) const {
 }
 
 void ObjectDetection::saveThumbnail(int person_id, const cv::Mat& crop) const {
-    std::string path = TARGETS_DIR + "/" + std::to_string(person_id) + "/thumb.jpg";
+    std::string path = cfg_.targets_dir + "/" + std::to_string(person_id) + "/thumb.jpg";
     std::vector<uchar> buf;
-    cv::imencode(".jpg", crop, buf, {cv::IMWRITE_JPEG_QUALITY, 85});
+    cv::imencode(".jpg", crop, buf, {cv::IMWRITE_JPEG_QUALITY, cfg_.thumb_jpeg_quality});
     std::ofstream f(path, std::ios::binary);
     if (f.is_open())
         f.write(reinterpret_cast<const char*>(buf.data()), buf.size());
@@ -206,7 +205,7 @@ void ObjectDetection::saveThumbnail(int person_id, const cv::Mat& crop) const {
 
 void ObjectDetection::saveExtraEmbeddings(int person_id,
                                            const std::vector<std::vector<float>>& embeddings) const {
-    std::string path = TARGETS_DIR + "/" + std::to_string(person_id) + "/embed_gallery.bin";
+    std::string path = cfg_.targets_dir + "/" + std::to_string(person_id) + "/embed_gallery.bin";
     // Append to existing file so multiple learn sessions accumulate
     std::ofstream f(path, std::ios::binary | std::ios::app);
     if (!f.is_open()) return;
@@ -235,11 +234,11 @@ int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
         }
     }
 
-    if (best_idx >= 0 && best_sim >= GALLERY_MATCH_THRESH) {
+    if (best_idx >= 0 && best_sim >= cfg_.gallery_match_thresh) {
         // EMA update: slowly adapt to appearance changes
         auto& emb = gallery_[best_idx].embedding;
         for (size_t i = 0; i < emb.size(); ++i)
-            emb[i] = emb[i] * 0.9f + feat[i] * 0.1f;
+            emb[i] = emb[i] * (1.0f - cfg_.embed_ema_alpha) + feat[i] * cfg_.embed_ema_alpha;
         // Re-normalise after EMA
         float en = 0; for (float x : emb) en += x * x; en = std::sqrt(en);
         if (en > 1e-8f) for (float& x : emb) x /= en;
@@ -254,7 +253,7 @@ int ObjectDetection::matchOrCreate(const std::vector<float>& raw_feat) {
 
     // Persist counter and embedding
     {
-        std::ofstream cf(TARGETS_DIR + "/next_id.txt");
+        std::ofstream cf(cfg_.targets_dir + "/next_id.txt");
         if (cf.is_open()) cf << next_id_;
     }
     saveEmbedding(rec);
@@ -332,10 +331,10 @@ void ObjectDetection::flushLearnCrops() {
             if (rec.id != pid) continue;
             for (auto& e : embeddings)
                 rec.extra_embeddings.push_back(e);
-            // Cap at 100 to bound memory across multiple learn sessions
-            if (rec.extra_embeddings.size() > 100)
+            // Cap to bound memory across multiple learn sessions
+            if ((int)rec.extra_embeddings.size() > cfg_.max_extra_embeddings)
                 rec.extra_embeddings.erase(rec.extra_embeddings.begin(),
-                    rec.extra_embeddings.begin() + (rec.extra_embeddings.size() - 100));
+                    rec.extra_embeddings.begin() + (rec.extra_embeddings.size() - cfg_.max_extra_embeddings));
             LOGI("Learn: saved " << embeddings.size() << " embeddings for P" << pid
                  << " (gallery total=" << rec.extra_embeddings.size() << ")");
             break;
@@ -363,13 +362,12 @@ void ObjectDetection::mainLoop(){
     // YOLO + tracker
     YOLOv8 yolov8(engine_path_);
     yolov8.make_pipe(true);
-    BoTSORT tracker(BOTSORT_TRACKER_CFG, BOTSORT_GMC_CFG, BOTSORT_REID_CFG, BOTSORT_REID_MODEL);
+    BoTSORT tracker(cfg_.botsortTrackerCfg(), cfg_.botsortGmcCfg(), cfg_.botsortReidCfg(), cfg_.botsortReidModel());
 
     cv::VideoCapture cap;
     constexpr int CAM_RETRY_SEC = 3;
 
     // Returns true if device idx accepts 2560×720 (i.e. it is the stereo camera).
-    // Returns false if the device can't be opened or doesn't support that resolution.
     auto isStereoDevice = [](int idx) -> bool {
         cv::VideoCapture probe(idx, cv::CAP_V4L2);
         if (!probe.isOpened()) return false;
@@ -382,21 +380,20 @@ void ObjectDetection::mainLoop(){
         return (w == 2560 && h == 720);
     };
 
-    // Open device idx as detection camera (640×480 MJPEG). Updates cam1_index_ on success.
-    auto tryOpen = [&](int idx) -> bool {
+    // Open a V4L2 device (by path or index) as detection camera.
+    auto tryOpenDevice = [&](const std::string& dev) -> bool {
         cap.release();
-        cap.open(idx, cv::CAP_V4L2);
-        // Let the camera negotiate its own format/resolution (avoids slow MJPEG
-        // decode overhead from forced 1280×720 MJPG — camera defaults to 640×480
-        // which is fast to decode and sufficient for YOLO's 640×640 input).
+        if (!dev.empty() && dev[0] == '/')
+            cap.open(dev, cv::CAP_V4L2);             // udev symlink path
+        else
+            cap.open(std::stoi(dev), cv::CAP_V4L2);  // integer index
         cap.set(cv::CAP_PROP_FPS, 30);
         cap.set(cv::CAP_PROP_BUFFERSIZE, 4);
         if (cap.isOpened()) {
-            LOGI("cam1: opened index " << idx << " at "
+            LOGI("cam1: opened " << dev << " at "
                  << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
                  << cap.get(cv::CAP_PROP_FRAME_HEIGHT)
                  << " @ " << cap.get(cv::CAP_PROP_FPS) << "fps");
-            cam1_index_ = idx;
             return true;
         }
         return false;
@@ -404,29 +401,44 @@ void ObjectDetection::mainLoop(){
 
     auto openCam = [&]() -> bool {
         // Stereo-fallback mode: no local camera, frames come from StereoDepth.
-        if (cam1_index_ < 0) {
+        if (cam1_device_.empty()) {
             LOGI("cam1: stereo-fallback mode — using left frame from stereo camera");
             return true;
         }
 
-        while (run_.load()) {
-            // 1. Fast path: try the last-known detection camera index.
-            if (cam1_index_ >= 0 && cam1_index_ != stereo_cam_index_ && tryOpen(cam1_index_))
-                return true;
+        bool is_path = (cam1_device_[0] == '/');
 
-            // 2. Scan all V4L2 devices — skip the stereo cam index and any device
-            //    that probes as a 2560×720 stereo camera.
-            LOGI("cam1: scanning devices 0-7 for detection camera...");
-            bool found = false;
-            for (int i = 0; i < 8 && run_.load(); ++i) {
-                if (i == stereo_cam_index_) continue;
-                if (isStereoDevice(i)) {
-                    LOGI("cam1: device " << i << " is stereo cam — skipping");
-                    continue;
+        while (run_.load()) {
+            // 1. Path-based open (udev symlink) — no scanning needed.
+            if (is_path) {
+                if (tryOpenDevice(cam1_device_)) return true;
+            } else {
+                // 2. Integer device — try the known index first.
+                int idx = std::stoi(cam1_device_);
+                int stereo_idx = -1;
+                if (!stereo_cam_device_.empty() && stereo_cam_device_[0] != '/')
+                    stereo_idx = std::stoi(stereo_cam_device_);
+
+                if (idx >= 0 && idx != stereo_idx && tryOpenDevice(cam1_device_))
+                    return true;
+
+                // 3. Scan all V4L2 devices — skip the stereo cam and 2560×720 devices.
+                LOGI("cam1: scanning devices 0-7 for detection camera...");
+                bool found = false;
+                for (int i = 0; i < 8 && run_.load(); ++i) {
+                    if (i == stereo_idx) continue;
+                    if (isStereoDevice(i)) {
+                        LOGI("cam1: device " << i << " is stereo cam — skipping");
+                        continue;
+                    }
+                    if (tryOpenDevice(std::to_string(i))) {
+                        cam1_device_ = std::to_string(i);  // remember for fast reconnect
+                        found = true;
+                        break;
+                    }
                 }
-                if (tryOpen(i)) { found = true; break; }
+                if (found) return true;
             }
-            if (found) return true;
 
             LOGW("cam1: no detection camera found — retrying in " << CAM_RETRY_SEC << "s");
             for (int i = 0; i < CAM_RETRY_SEC * 10 && run_.load(); ++i)
@@ -451,7 +463,7 @@ void ObjectDetection::mainLoop(){
     while (run_.load()){
         cv::Mat raw_frame;
 
-        if (cam1_index_ < 0) {
+        if (cam1_device_.empty()) {
             // Stereo-fallback: wait for a new left half-frame from StereoDepth.
             while (run_.load()) {
                 if (comms_ && comms_->getStereoLeftFrame(raw_frame)) break;
@@ -573,7 +585,7 @@ void ObjectDetection::mainLoop(){
                 std::lock_guard<std::mutex> lk(gallery_mtx_);
                 for (auto& rec : gallery_) {
                     if (rec.id != active_target_person_id_) continue;
-                    float bestSim = GALLERY_MATCH_THRESH - 0.01f;
+                    float bestSim = cfg_.gallery_match_thresh - 0.01f;
                     for (auto& tr : tracks) {
                         if (!tr->smooth_feat) continue;
                         std::vector<float> feat(tr->smooth_feat->data(),
@@ -681,12 +693,12 @@ void ObjectDetection::mainLoop(){
                 auto now_lm = std::chrono::steady_clock::now();
                 auto ms_since = std::chrono::duration_cast<std::chrono::milliseconds>(
                                     now_lm - learn_last_sample_).count();
-                if (ms_since >= 500) {
+                if (ms_since >= cfg_.learn_sample_ms) {
                     learn_last_sample_ = now_lm;
                     int cx = std::max(0, best.x), cy = std::max(0, best.y);
                     int cw = std::min(best.width, frame.cols - cx);
                     int ch = std::min(best.height, frame.rows - cy);
-                    if (cw >= 64 && ch >= 64) {
+                    if (cw >= cfg_.learn_min_crop_px && ch >= cfg_.learn_min_crop_px) {
                         cv::Mat crop = frame(cv::Rect(cx, cy, cw, ch)).clone();
                         // Blur check via Laplacian variance
                         cv::Mat gray, lap;
@@ -694,7 +706,7 @@ void ObjectDetection::mainLoop(){
                         cv::Laplacian(gray, lap, CV_64F);
                         cv::Scalar mn, sd;
                         cv::meanStdDev(lap, mn, sd);
-                        if (sd[0] * sd[0] > 80.0) {
+                        if (sd[0] * sd[0] > cfg_.learn_blur_thresh) {
                             // Diversity check against stored embeddings
                             std::vector<float> feat;
                             for (auto& tr : tracks) {
@@ -710,7 +722,7 @@ void ObjectDetection::mainLoop(){
                             if (accept) {
                                 std::lock_guard<std::mutex> lk(learn_mtx_);
                                 for (auto& e : learn_embeddings_)
-                                    if (cosineSim(e, feat) > 0.95f) { accept = false; break; }
+                                    if (cosineSim(e, feat) > cfg_.learn_dup_thresh) { accept = false; break; }
                                 if (accept) {
                                     cv::Mat sized;
                                     if (crop.rows > 320) {
@@ -718,7 +730,7 @@ void ObjectDetection::mainLoop(){
                                         cv::resize(crop, sized, cv::Size(), sc, sc);
                                     } else sized = crop;
                                     std::vector<uchar> buf;
-                                    cv::imencode(".jpg", sized, buf, {cv::IMWRITE_JPEG_QUALITY, 85});
+                                    cv::imencode(".jpg", sized, buf, {cv::IMWRITE_JPEG_QUALITY, cfg_.thumb_jpeg_quality});
                                     learn_crops_.push_back(base64Encode(buf));
                                     learn_embeddings_.push_back(feat);
                                     new_count = learn_crops_.size();
@@ -749,7 +761,7 @@ void ObjectDetection::mainLoop(){
             auto now_al = std::chrono::steady_clock::now();
             auto ms_al  = std::chrono::duration_cast<std::chrono::milliseconds>(
                               now_al - auto_learn_last_).count();
-            if (ms_al >= AUTO_INTERVAL_MS) {
+            if (ms_al >= cfg_.auto_learn_interval_ms) {
                 float conf = 0.0f;
                 std::vector<float> feat;
                 for (auto& tr : tracks) {
@@ -761,7 +773,7 @@ void ObjectDetection::mainLoop(){
                     break;
                 }
                 int area = best.width * best.height;
-                if (conf >= AUTO_MIN_CONF && area >= AUTO_MIN_AREA && !feat.empty()) {
+                if (conf >= cfg_.auto_learn_min_conf && area >= cfg_.auto_learn_min_area && !feat.empty()) {
                     auto_learn_last_ = now_al;
                     int pid = active_target_person_id_;
 
@@ -778,22 +790,22 @@ void ObjectDetection::mainLoop(){
                         for (auto& rec : gallery_) {
                             if (rec.id != pid) continue;
                             for (auto& e : rec.extra_embeddings)
-                                if (cosineSim(e, feat) > 0.95f) { accept = false; break; }
+                                if (cosineSim(e, feat) > cfg_.learn_dup_thresh) { accept = false; break; }
                             break;
                         }
                     }
                     if (accept) {
                         for (auto& e : auto_batch_)
-                            if (cosineSim(e, feat) > 0.95f) { accept = false; break; }
+                            if (cosineSim(e, feat) > cfg_.learn_dup_thresh) { accept = false; break; }
                     }
 
                     if (accept) {
                         auto_batch_.push_back(feat);
                         LOGI("Auto-learn: P" << pid << " queued embed "
-                             << auto_batch_.size() << "/" << AUTO_BATCH_SIZE
+                             << auto_batch_.size() << "/" << cfg_.auto_learn_batch_size
                              << " (conf=" << (int)(conf*100) << "% area=" << area << ")");
 
-                        if ((int)auto_batch_.size() >= AUTO_BATCH_SIZE) {
+                        if ((int)auto_batch_.size() >= cfg_.auto_learn_batch_size) {
                             saveExtraEmbeddings(pid, auto_batch_);
                             {
                                 std::lock_guard<std::mutex> lk(gallery_mtx_);
@@ -801,11 +813,11 @@ void ObjectDetection::mainLoop(){
                                     if (rec.id != pid) continue;
                                     for (auto& e : auto_batch_)
                                         rec.extra_embeddings.push_back(e);
-                                    if (rec.extra_embeddings.size() > 100)
+                                    if ((int)rec.extra_embeddings.size() > cfg_.max_extra_embeddings)
                                         rec.extra_embeddings.erase(
                                             rec.extra_embeddings.begin(),
                                             rec.extra_embeddings.begin() +
-                                                (rec.extra_embeddings.size() - 100));
+                                                (rec.extra_embeddings.size() - cfg_.max_extra_embeddings));
                                     LOGI("Auto-learn: saved batch of " << auto_batch_.size()
                                          << " embeds for P" << pid
                                          << " (total=" << rec.extra_embeddings.size() << ")");
@@ -866,7 +878,7 @@ void ObjectDetection::mainLoop(){
 
         // ── ZMQ publish (scaled, non-blocking) ───────────────────────────────
         if (zmq_ready_) {
-            constexpr int STREAM_MAX_W = 1280;
+            const int STREAM_MAX_W = cfg_.stream_max_w;
             cv::Mat stream_frame;
             if (combined.cols > STREAM_MAX_W) {
                 float scale = float(STREAM_MAX_W) / combined.cols;

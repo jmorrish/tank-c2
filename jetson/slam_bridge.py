@@ -17,6 +17,14 @@ Messages bridge → C++ app:
 Messages C++ app → bridge:
   {"type":"odom_data","left":int,"right":int,"age_ms":float}
     → published as nav_msgs/Odometry on /odom when age_ms < 200
+  {"type":"imu_data","yaw":float,"pitch":float,"roll":float}
+    → published as sensor_msgs/Imu on /imu/data
+  {"type":"gps_data","lat":float,"lon":float,"alt":float,"quality":int,"sats":int}
+    → published as sensor_msgs/NavSatFix on /gps/fix
+  {"type":"gps_rmc","speed_knots":float,"course_deg":float}
+    → used for GPS heading auto-calibration
+  {"type":"plan_path","from_lat":float,"from_lon":float,"to_lat":float,"to_lon":float}
+    → requests Nav2 ComputePathToPose, returns planned_path response
 
 Odometry state machine:
   ODOM_INACTIVE → ODOM_ACTIVE when 5 consecutive fresh encoder reads
@@ -63,11 +71,18 @@ import numpy as np
 from PIL import Image
 
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import LaserScan, Imu, NavSatFix, NavSatStatus
 from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
-from tf2_ros import StaticTransformBroadcaster
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformStamped
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
+try:
+    from nav2_msgs.action import ComputePathToPose
+    from rclpy.action import ActionClient
+    HAS_NAV2 = True
+except ImportError:
+    HAS_NAV2 = False
 
 try:
     import tf_transformations
@@ -101,12 +116,41 @@ class SlamBridge(Node):
             t.transform.rotation.w    = 1.0
             return t
 
+        # Only base_link → laser_frame is truly static.
+        # odom → base_link is now published dynamically (by EKF or by _publish_odom_tf).
         self._tf_broadcaster.sendTransform([
             make_static_tf('base_link', 'laser_frame', z=0.02),
-            make_static_tf('odom',      'base_link'),   # identity; needed for TF chain
         ])
 
+        # Dynamic TF broadcaster for odom → base_link (used when EKF is not running)
+        self._dyn_tf_broadcaster = TransformBroadcaster(self)
+
+        # Publish an initial identity odom → base_link so TF tree is complete
+        # before EKF starts or before first encoder data arrives.
+        self._publish_odom_tf(0.0, 0.0, 0.0, self.get_clock().now().to_msg())
+
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.imu_pub  = self.create_publisher(Imu, '/imu/data', 10)
+        self.gps_pub  = self.create_publisher(NavSatFix, '/gps/fix', 10)
+
+        # Nav2 path planning action client
+        self._nav2_client = None
+        if HAS_NAV2:
+            self._nav2_client = ActionClient(
+                self, ComputePathToPose, 'compute_path_to_pose')
+            self.get_logger().info('Nav2 ComputePathToPose action client created')
+        else:
+            self.get_logger().warn('nav2_msgs not installed — path planning disabled')
+
+        # GPS reference point for GPS↔map conversion (first valid fix)
+        self._gps_ref = None       # (lat, lon) or None
+        self._gps_ref_map = None   # (map_x, map_y) at reference time
+
+        # Heading calibration state
+        self._heading_offset = 0.0
+        self._heading_calibrated = False
+        self._last_imu_yaw_rad = 0.0
+
         self.create_subscription(LaserScan, '/scan', self.on_scan, qos)
         self.create_subscription(
             PoseWithCovarianceStamped, '/pose', self.on_pose, 10)
@@ -124,6 +168,7 @@ class SlamBridge(Node):
         self._client      = None
         self._client_lock = threading.Lock()
         self._last_map_time = 0.0
+        self._last_gps_pub_time = 0.0   # throttle GPS publishing to 1 Hz
 
         # Odometry state machine
         self._odom_state       = 'INACTIVE'   # 'INACTIVE' | 'ACTIVE'
@@ -321,8 +366,18 @@ class SlamBridge(Node):
     # ── C++ app → bridge ──────────────────────────────────────────────────────
 
     def _on_cpp_message(self, msg: dict):
-        if msg.get('type') == 'odom_data':
+        msg_type = msg.get('type')
+        if msg_type == 'odom_data':
             self._process_odom(msg)
+        elif msg_type == 'imu_data':
+            self._publish_imu(msg)
+        elif msg_type == 'gps_data':
+            self._publish_gps(msg)
+        elif msg_type == 'gps_rmc':
+            self._process_heading(msg)
+        elif msg_type == 'plan_path':
+            threading.Thread(target=self._handle_plan_path,
+                             args=(msg,), daemon=True).start()
 
     def _process_odom(self, msg: dict):
         left   = int(msg['left'])
@@ -390,6 +445,21 @@ class SlamBridge(Node):
 
         self.odom_pub.publish(odom)
 
+        # Publish dynamic odom → base_link TF (fallback when EKF is not running)
+        self._publish_odom_tf(x, y, theta, now)
+
+    def _publish_odom_tf(self, x, y, theta, stamp):
+        """Publish dynamic odom → base_link transform."""
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'base_link'
+        t.transform.translation.x = x
+        t.transform.translation.y = y
+        t.transform.rotation.z = math.sin(theta / 2.0)
+        t.transform.rotation.w = math.cos(theta / 2.0)
+        self._dyn_tf_broadcaster.sendTransform(t)
+
     # ── SLAM Toolbox lifecycle ─────────────────────────────────────────────────
 
     def _start_slam(self, use_odom: bool):
@@ -433,6 +503,249 @@ class SlamBridge(Node):
             self._enc_prev_left  = None
             self._enc_prev_right = None
             self._odom_x = self._odom_y = self._odom_theta = 0.0
+
+
+    # ── IMU publishing ─────────────────────────────────────────────────────────
+
+    def _publish_imu(self, msg: dict):
+        """Publish BNO085 YPR as sensor_msgs/Imu on /imu/data."""
+        yaw_deg   = msg.get('yaw', 0.0)
+        pitch_deg = msg.get('pitch', 0.0)
+        roll_deg  = msg.get('roll', 0.0)
+
+        yaw   = math.radians(yaw_deg)
+        pitch = math.radians(pitch_deg)
+        roll  = math.radians(roll_deg)
+
+        # Store for heading calibration
+        self._last_imu_yaw_rad = yaw
+
+        # Convert Euler (ZYX) to quaternion
+        cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+        cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+        cr, sr = math.cos(roll / 2), math.sin(roll / 2)
+
+        imu = Imu()
+        imu.header.stamp = self.get_clock().now().to_msg()
+        imu.header.frame_id = 'base_link'
+        imu.orientation.x = sr * cp * cy - cr * sp * sy
+        imu.orientation.y = cr * sp * cy + sr * cp * sy
+        imu.orientation.z = cr * cp * sy - sr * sp * cy
+        imu.orientation.w = cr * cp * cy + sr * sp * sy
+        # BNO085 orientation accuracy ~0.01 rad (~0.5°)
+        imu.orientation_covariance[0] = 0.01
+        imu.orientation_covariance[4] = 0.01
+        imu.orientation_covariance[8] = 0.01
+        self.imu_pub.publish(imu)
+
+    # ── GPS publishing ────────────────────────────────────────────────────────
+
+    def _publish_gps(self, msg: dict):
+        """Publish GPS fix as sensor_msgs/NavSatFix on /gps/fix (throttled to 1 Hz)."""
+        now = time.time()
+        if now - self._last_gps_pub_time < 1.0:
+            return
+        self._last_gps_pub_time = now
+
+        fix = NavSatFix()
+        fix.header.stamp = self.get_clock().now().to_msg()
+        fix.header.frame_id = 'gps_link'
+        fix.latitude  = msg.get('lat', 0.0)
+        fix.longitude = msg.get('lon', 0.0)
+        fix.altitude  = msg.get('alt', 0.0)
+
+        quality = msg.get('quality', 0)
+        fix.status.status = (NavSatStatus.STATUS_FIX
+                             if quality > 0 else NavSatStatus.STATUS_NO_FIX)
+        fix.status.service = NavSatStatus.SERVICE_GPS
+
+        # Position covariance — ~2.5m CEP for typical GPS
+        fix.position_covariance[0] = 2.5   # lat variance
+        fix.position_covariance[4] = 2.5   # lon variance
+        fix.position_covariance[8] = 5.0   # alt variance
+        fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
+
+        self.gps_pub.publish(fix)
+
+        # Set GPS reference on first valid fix (for GPS↔map conversion)
+        if self._gps_ref is None and quality > 0:
+            self._gps_ref = (fix.latitude, fix.longitude)
+            # Capture current SLAM pose as map reference
+            # (will be (0,0) if SLAM hasn't produced a pose yet — that's OK)
+            with self._odom_lock:
+                self._gps_ref_map = (self._odom_x, self._odom_y)
+            self.get_logger().info(
+                f'GPS reference set: ({fix.latitude:.7f}, {fix.longitude:.7f})')
+
+    # ── Heading calibration ───────────────────────────────────────────────────
+
+    def _process_heading(self, msg: dict):
+        """Auto-calibrate GPS↔IMU heading offset when moving with GPS fix."""
+        speed_knots = msg.get('speed_knots', 0.0)
+        course_deg  = msg.get('course_deg', 0.0)
+
+        # Only calibrate when actually moving (>0.5 knots ≈ 0.26 m/s)
+        if speed_knots < 0.5:
+            return
+
+        # GPS course: 0=north, 90=east (CW from north)
+        # Convert to math convention: 0=east, CCW positive
+        gps_heading_rad = math.radians(90.0 - course_deg)
+
+        offset = gps_heading_rad - self._last_imu_yaw_rad
+        # Normalise to [-pi, pi]
+        offset = math.atan2(math.sin(offset), math.cos(offset))
+
+        # Exponential moving average
+        alpha = 0.05
+        if not self._heading_calibrated:
+            self._heading_offset = offset
+            self._heading_calibrated = True
+            self.get_logger().info(
+                f'Heading calibration initial: offset={math.degrees(offset):.1f}°')
+        else:
+            self._heading_offset = (self._heading_offset * (1 - alpha)
+                                    + offset * alpha)
+
+    # ── GPS ↔ map coordinate conversion ───────────────────────────────────────
+
+    def _gps_to_map(self, lat, lon):
+        """Convert GPS lat/lon to map frame (x, y) using tangent plane approx."""
+        if self._gps_ref is None:
+            return None, None
+        ref_lat, ref_lon = self._gps_ref
+        ref_x, ref_y = self._gps_ref_map or (0.0, 0.0)
+
+        # Local tangent plane (metres per degree at reference latitude)
+        m_per_deg_lat = 111132.92
+        m_per_deg_lon = 111132.92 * math.cos(math.radians(ref_lat))
+
+        dx = (lon - ref_lon) * m_per_deg_lon
+        dy = (lat - ref_lat) * m_per_deg_lat
+
+        # Apply heading offset to rotate GPS frame into map frame
+        cos_h = math.cos(self._heading_offset)
+        sin_h = math.sin(self._heading_offset)
+        map_x = ref_x + dx * cos_h - dy * sin_h
+        map_y = ref_y + dx * sin_h + dy * cos_h
+
+        return map_x, map_y
+
+    def _map_to_gps(self, map_x, map_y):
+        """Convert map frame (x, y) back to GPS lat/lon."""
+        if self._gps_ref is None:
+            return None, None
+        ref_lat, ref_lon = self._gps_ref
+        ref_x, ref_y = self._gps_ref_map or (0.0, 0.0)
+
+        m_per_deg_lat = 111132.92
+        m_per_deg_lon = 111132.92 * math.cos(math.radians(ref_lat))
+
+        # Undo heading rotation
+        dx = map_x - ref_x
+        dy = map_y - ref_y
+        cos_h = math.cos(-self._heading_offset)
+        sin_h = math.sin(-self._heading_offset)
+        dx_gps = dx * cos_h - dy * sin_h
+        dy_gps = dx * sin_h + dy * cos_h
+
+        lat = ref_lat + dy_gps / m_per_deg_lat
+        lon = ref_lon + dx_gps / m_per_deg_lon
+        return lat, lon
+
+    # ── Nav2 path planning ────────────────────────────────────────────────────
+
+    def _handle_plan_path(self, msg: dict):
+        """Handle plan_path request from C++ — calls Nav2 ComputePathToPose."""
+        if not HAS_NAV2 or self._nav2_client is None:
+            self._send_to_cpp({
+                'type': 'planned_path', 'ok': False,
+                'error': 'Nav2 not available (nav2_msgs not installed)'})
+            return
+
+        if self._gps_ref is None:
+            self._send_to_cpp({
+                'type': 'planned_path', 'ok': False,
+                'error': 'No GPS reference yet'})
+            return
+
+        if not self._nav2_client.wait_for_server(timeout_sec=2.0):
+            self._send_to_cpp({
+                'type': 'planned_path', 'ok': False,
+                'error': 'Nav2 planner server not ready'})
+            return
+
+        # Convert GPS goal to map frame
+        goal_x, goal_y = self._gps_to_map(msg['to_lat'], msg['to_lon'])
+        if goal_x is None:
+            self._send_to_cpp({
+                'type': 'planned_path', 'ok': False,
+                'error': 'GPS→map conversion failed'})
+            return
+
+        goal = ComputePathToPose.Goal()
+        goal.goal.header.frame_id = 'map'
+        goal.goal.header.stamp = self.get_clock().now().to_msg()
+        goal.goal.pose.position.x = goal_x
+        goal.goal.pose.position.y = goal_y
+        goal.goal.pose.orientation.w = 1.0  # don't care about goal heading
+        goal.use_start = False  # use current robot pose from TF
+
+        try:
+            future = self._nav2_client.send_goal_async(goal)
+            rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+            goal_handle = future.result()
+
+            if not goal_handle or not goal_handle.accepted:
+                self._send_to_cpp({
+                    'type': 'planned_path', 'ok': False,
+                    'error': 'Goal rejected by Nav2'})
+                return
+
+            result_future = goal_handle.get_result_async()
+            rclpy.spin_until_future_complete(self, result_future, timeout_sec=10.0)
+            result = result_future.result()
+
+            if result and result.result.path.poses:
+                # Convert map-frame path back to GPS waypoints
+                # Subsample: one waypoint every ~1m to avoid flooding C++
+                waypoints = []
+                prev = None
+                for pose in result.result.path.poses:
+                    x = pose.pose.position.x
+                    y = pose.pose.position.y
+                    if prev:
+                        dist = math.hypot(x - prev[0], y - prev[1])
+                        if dist < 1.0:
+                            continue
+                    lat, lon = self._map_to_gps(x, y)
+                    if lat is not None:
+                        waypoints.append([round(lat, 7), round(lon, 7)])
+                    prev = (x, y)
+
+                # Always include final point
+                last = result.result.path.poses[-1].pose.position
+                lat, lon = self._map_to_gps(last.x, last.y)
+                if lat is not None:
+                    final = [round(lat, 7), round(lon, 7)]
+                    if not waypoints or waypoints[-1] != final:
+                        waypoints.append(final)
+
+                self.get_logger().info(
+                    f'Nav2 planned path: {len(waypoints)} waypoints')
+                self._send_to_cpp({
+                    'type': 'planned_path', 'ok': True,
+                    'waypoints': waypoints})
+            else:
+                self._send_to_cpp({
+                    'type': 'planned_path', 'ok': False,
+                    'error': 'No valid path found'})
+
+        except Exception as e:
+            self.get_logger().error(f'Nav2 planning error: {e}')
+            self._send_to_cpp({
+                'type': 'planned_path', 'ok': False,
+                'error': str(e)})
 
 
 def main():

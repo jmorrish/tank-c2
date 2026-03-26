@@ -1,0 +1,35 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    world_frame: odom
+    odom_frame: odom
+    base_link_frame: base_link
+    publish_tf: true             # publishes odom -> base_link TF (replaces manual static TF)
+
+    # Wheel odometry (from slam_bridge dead-reckoning)
+    odom0: /odom
+    odom0_config: [true, true, false,     # x, y position
+                   false, false, false,    # orientation (IMU is better)
+                   true, true, false,      # vx, vy
+                   false, false, true,     # vyaw
+                   false, false, false]    # accelerations
+
+    # IMU (BNO085 — high-quality 9-DOF)
+    imu0: /imu/data
+    imu0_config: [false, false, false,    # position (no)
+                  true, true, true,       # roll, pitch, yaw (absolute)
+                  false, false, false,    # linear velocity (no)
+                  true, true, true,       # angular velocity
+                  false, false, false]    # linear acceleration
+    imu0_remove_gravitational_acceleration: true
+
+navsat_transform_node:
+  ros__parameters:
+    frequency: 10.0
+    magnetic_declination_radians: 0.0    # adjust for location
+    yaw_offset: 1.5707963               # pi/2 if IMU yaw 0 = east, GPS 0 = north
+    zero_altitude: true
+    broadcast_cartesian_transform: true
+    publish_filtered_gps: true
+    use_odometry_yaw: false              # use IMU yaw, not odom yaw
+    wait_for_datum: false

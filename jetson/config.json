@@ -1,0 +1,92 @@
+{
+    "teensy_ip": "192.168.0.177",
+    "teensy_port": 23,
+    "sensor_ip": "192.168.0.178",
+    "sensor_port": 23,
+    "cam2_rtsp": "rtsp://192.168.0.71/z3-2.sdp",
+    "web_ipc_port": 9999,
+
+    "sensor_stale_ms": 500.0,
+
+    "kp": 1.5,
+    "ki": 0.1,
+    "kd": 0.1,
+    "max_i": 1000.0,
+
+    "center_threshold": 20.0,
+    "min_speed": 0.0,
+    "max_speed": 2000.0,
+    "velo_eps": 25.0,
+    "max_delta_velo": 500.0,
+
+    "pan_limit_steps": 50000.0,
+    "tilt_limit_steps": 20000.0,
+
+    "confidence_threshold": 0.40,
+
+    "gallery_match_thresh": 0.75,
+    "embed_ema_alpha": 0.1,
+    "max_extra_embeddings": 100,
+
+    "auto_learn_interval_ms": 3000,
+    "auto_learn_min_conf": 0.80,
+    "auto_learn_min_area": 8192,
+    "auto_learn_batch_size": 5,
+
+    "learn_sample_ms": 500,
+    "learn_min_crop_px": 64,
+    "learn_blur_thresh": 80.0,
+    "learn_dup_thresh": 0.95,
+
+    "stream_max_w": 1280,
+    "thumb_jpeg_quality": 85,
+
+    "follow_distance_m": 0.5,
+    "wheel_gain_distance": 20000.0,
+    "wheel_gain_steer": 0.2,
+    "wheel_max_sps": 15000,
+    "max_follow_distance_m": 10.0,
+
+    "wheel_kp": 0.3,
+    "wheel_ki": 0.05,
+    "wheel_pi_max_i": 5000.0,
+
+    "pixels_per_degree": 5.0,
+
+    "stereo_max_fps": 10.0,
+    "stereo_left_fps": 10.0,
+    "stereo_num_disparities": 128,
+    "stereo_block_size": 9,
+    "stereo_blur_ksize": 3,
+    "stereo_jpeg_quality": 60,
+    "stereo_calib_xml": "/home/james/stereo_calib/stereo_params_cuda.xml",
+
+    "mission_gps_loss_abort_s": 30.0,
+    "mission_stuck_check_s": 30.0,
+    "mission_stuck_min_move_m": 0.5,
+    "mission_steer_gain": 50.0,
+    "mission_max_steer_frac": 0.6,
+    "mission_moving_knots": 0.5,
+    "mission_heading_filter": 0.05,
+    "mission_ptu_ms_per_deg": 10.0,
+    "mission_return_speed_frac": 0.33,
+
+    "telemetry_stale_ms": 2000.0,
+    "status_push_interval_ms": 1000,
+
+    "zmq_detection_port": 5555,
+    "zmq_stereo_port": 5557,
+    "zmq_disparity_port": 5558,
+
+    "lidar_port": "/dev/ttyUSB0",
+    "lidar_baud": 115200,
+    "lidar_fwd_arc_deg": 30.0,
+    "lidar_obstacle_m": 0.5,
+    "lidar_max_range_m": 8.0,
+    "lidar_scan_pts": 180,
+
+    "botsort_base": "/home/james/YOLOv8-TensorRT/BoTSORT-cpp",
+    "missions_dir": "/home/james/tank_missions",
+    "targets_dir": "/home/james/tank_targets",
+    "log_path": "/tmp/robot_run.csv"
+}

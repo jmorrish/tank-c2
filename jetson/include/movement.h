@@ -3,7 +3,6 @@
 #include <thread>
 #include "helpers.h"
 #include "comms.h"
-#include "config.h"
 #include "runtime_config.h"
 #include "logger.h"
 

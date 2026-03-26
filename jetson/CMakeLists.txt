@@ -68,9 +68,16 @@ include_directories(${INCLUDE_DIRS})
 add_executable(${PROJECT_NAME}
     main.cpp
     object_detection.cpp
-    movement.cpp
+    behavior_coordinator.cpp
+    follow_behavior.cpp
+    mission_behavior.cpp
+    nav2_planner.cpp
     comms.cpp
+    teensy_link.cpp
+    slam_link.cpp
+    mission.cpp
     stereo_depth.cpp
+    sensor_store.cpp
     runtime_config.cpp
     logger.cpp
     ${BOT_SORT_SOURCES}

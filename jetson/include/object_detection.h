@@ -25,7 +25,7 @@ struct PersonRecord {
 class ObjectDetection {
 public:
     ObjectDetection(const std::string& engine_path,
-                    int cam1_index,
+                    const std::string& cam1_device,
                     const std::string& cam2_rtsp,
                     bool headless,
                     AtomicLatest<TargetMsg>& bus,
@@ -37,9 +37,9 @@ public:
     void stop();
     bool isRunning() const { return run_.load(); }
 
-    // Tell detection which device index is the stereo camera so it is skipped
+    // Tell detection which device is the stereo camera so it is skipped
     // during automatic camera scanning (set before start()).
-    void setStereoIndex(int idx) { stereo_cam_index_ = idx; }
+    void setStereoDevice(const std::string& dev) { stereo_cam_device_ = dev; }
 
     // Called from Comms thread to request a target switch (thread-safe).
     void setTargetPerson(int person_id) { pending_target_person_.store(person_id); }
@@ -61,8 +61,8 @@ private:
     static float cosineSim(const std::vector<float>& a, const std::vector<float>& b);
 
     std::string engine_path_;
-    int cam1_index_;
-    int stereo_cam_index_ = -1;  // device index to skip during scan (it's the stereo cam)
+    std::string cam1_device_;         // V4L2 path or index-as-string; empty = stereo fallback
+    std::string stereo_cam_device_;   // device to skip during scan
     std::string cam2_rtsp_;
     bool headless_;
     AtomicLatest<TargetMsg>& bus_;
@@ -100,8 +100,6 @@ private:
     bool zmq_ready_ = false;
 
     // ── Cross-session target gallery ──────────────────────────────────────────
-    static constexpr float GALLERY_MATCH_THRESH  = 0.75f;
-
     std::vector<PersonRecord> gallery_;
     std::map<int, int> track_to_person_;  // session track_id → gallery person_id
     int next_id_               = 1;
@@ -121,10 +119,6 @@ private:
     std::chrono::steady_clock::time_point auto_learn_last_{};
     std::vector<std::vector<float>> auto_batch_;  // pending disk write (mainLoop only)
     int auto_batch_pid_ = -1;
-    static constexpr int   AUTO_INTERVAL_MS = 3000;   // sample every 3 s
-    static constexpr float AUTO_MIN_CONF    = 0.80f;  // min track confidence
-    static constexpr int   AUTO_MIN_AREA    = 8192;   // min box area ~64×128 px
-    static constexpr int   AUTO_BATCH_SIZE  = 5;      // flush to disk every N embeds
 
     void flushLearnCrops();
     static std::string base64Encode(const std::vector<uchar>& data);

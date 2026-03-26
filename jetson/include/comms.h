@@ -4,34 +4,26 @@
 #include <thread>
 #include <mutex>
 #include <optional>
-#include <cmath>
-#include <limits>
-#include <vector>
-#include <utility>
 #include <opencv2/opencv.hpp>
-#include "helpers.h"      // For GPSData and EncoderData
-#include "stereo_depth.h" // Integrated stereo depth camera
+#include "helpers.h"         // For GPSData and EncoderData
+#include "stereo_depth.h"    // Integrated stereo depth camera
+#include "runtime_config.h"  // Runtime-tunable parameters
+#include "sensor_store.h"    // Thread-safe sensor storage
+#include "teensy_link.h"     // TCP client with auto-reconnect
+#include "slam_link.h"       // SLAM bridge TCP client
+#include "control_mode.h"    // ControlMode, MissionFault enums
+#include "mission.h"         // GPS waypoint mission executor
 
-class ObjectDetection;  // fwd
-
-enum class ControlMode : int {
-    FOLLOW  = 0,  // autonomous person-follow (default)
-    MANUAL  = 1,  // web-driven manual control
-    MISSION = 2,  // GPS waypoint mission running
-    STOPPED = 3   // all motion halted
-};
-
-enum class MissionFault : int {
-    NONE     = 0,
-    GPS_LOST = 1,  // GPS signal absent for too long
-    STUCK    = 2,  // physical movement not matching commanded motion
-    WHEEL    = 3   // wheel command delivery failed (control socket down)
-};
+class ObjectDetection;       // fwd
+class BehaviorCoordinator;   // fwd
+class Nav2Planner;           // fwd
 
 class Comms {
 public:
-    Comms();
+    explicit Comms(const RuntimeConfig& cfg);
     ~Comms();
+
+    const RuntimeConfig& config() const { return cfg_; }
 
     // Control Teensy TCP (PTU + Wheels)
     bool connectControl(const std::string& ip, int port);
@@ -47,28 +39,51 @@ public:
     bool imuOff();
     bool imuRate(float hz);
 
-    // IMU latest YPR
-    bool getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) const;
-    bool getLatestPtuYPR(float& yaw, float& pitch, float& roll, double& age_ms) const;
+    // IMU latest YPR (delegates to SensorStore)
+    bool getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) const {
+        return sensors_.getLatestYPR(yaw, pitch, roll, age_ms);
+    }
+    bool getLatestPtuYPR(float& yaw, float& pitch, float& roll, double& age_ms) const {
+        return sensors_.getLatestPtuYPR(yaw, pitch, roll, age_ms);
+    }
 
     // GPS latest
-    bool getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const;
+    bool getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const {
+        return sensors_.getLatestGPS(lat, lon, alt, speed_knots, course_deg, quality, sats, age_ms);
+    }
 
     // Encoders latest
-    bool getLatestEncoders(int& left, int& right, double& age_ms) const;
+    bool getLatestEncoders(int& left, int& right, double& age_ms) const {
+        return sensors_.getLatestEncoders(left, right, age_ms);
+    }
 
-    float getLatestDistance(double* age_ms=nullptr) const; // meters (or <0 if invalid/none)
+    float getLatestDistance(double* age_ms=nullptr) const {
+        return sensors_.getLatestDistance(age_ms);
+    }
 
-    void  setDetectionFPS(float fps)   { detection_fps_.store(fps); }
-    int   getStreamQuality() const     { return stream_quality_.load(); }
-    void  setTargetPersonId(int id)    { target_person_id_.store(id); }
+    void  setDetectionFPS(float fps)   { sensors_.setDetectionFPS(fps); }
+    int   getStreamQuality() const     { return sensors_.getStreamQuality(); }
+    void  setTargetPersonId(int id)    { sensors_.setTargetPersonId(id); }
+
+    // Direct access to SensorStore (for extracted subsystems)
+    SensorStore&       sensors()       { return sensors_; }
+    const SensorStore& sensors() const { return sensors_; }
 
     // Wire ObjectDetection so set_target: commands can be forwarded
     void  setObjectDetection(ObjectDetection* od) { od_ptr_ = od; }
 
-    // Control mode
-    ControlMode getMode() const { return static_cast<ControlMode>(mode_.load()); }
-    void        setMode(ControlMode m) { mode_.store(static_cast<int>(m)); }
+    // Wire BehaviorCoordinator so mode transitions go through it
+    void setCoordinator(BehaviorCoordinator* bc) { coordinator_ = bc; }
+
+    // Access MissionRunner (for MissionBehavior wiring in main.cpp)
+    MissionRunner& mission() { return mission_; }
+
+    // Wire MissionBehavior so mission_start/resume commands go through it
+    void setMissionBehavior(class MissionBehavior* mb) { mission_behavior_ = mb; }
+
+    // Control mode — delegates to coordinator if wired, else falls back to atomic
+    ControlMode getMode() const;
+    void        setMode(ControlMode m);
 
     // NEW: Web IPC (localhost TCP server for Python web interface)
     bool startWebIPC(int port = 9999);  // Call this in main.cpp after connecting to Teensy
@@ -87,17 +102,26 @@ public:
     bool startSlamBridge(const std::string& host = "127.0.0.1", int port = 9997);
     void stopSlamBridge();
 
-    // Obstacle / lidar forward distance (populated by SLAM bridge)
-    bool  hasObstacle() const { return obstacle_.load(); }
-    float getLatestLidarFwdDist(double* age_ms = nullptr) const;
+    // Send a JSON line to slam_bridge (thread-safe, for Nav2 planner requests)
+    bool sendSlamBridge(const std::string& json_str);
 
-    // SLAM-estimated pose
-    struct SlamPose { float x=0, y=0, theta=0; bool valid=false; };
-    SlamPose getSlamPose() const;
+    // Wire Nav2Planner so planned_path responses are routed to it
+    void setNav2Planner(Nav2Planner* p) { nav2_planner_ = p; }
+
+    // Obstacle / lidar forward distance (populated by SLAM bridge)
+    bool  hasObstacle() const { return sensors_.hasObstacle(); }
+    float getLatestLidarFwdDist(double* age_ms = nullptr) const {
+        return sensors_.getLatestLidarFwdDist(age_ms);
+    }
+
+    // SLAM-estimated pose (type alias delegates to SensorStore)
+    using SlamPose = SensorStore::SlamPose;
+    SlamPose getSlamPose() const { return sensors_.getSlamPose(); }
 
     // Stereo depth camera (integrated — runs its own VideoCapture independently)
+    // device: V4L2 path ("/dev/video-stereo") or index as string ("2")
     // share_left=true: also publish left half-frames for detection fallback
-    void startStereoDepth(int device_index = 2, bool share_left = false);
+    void startStereoDepth(const std::string& device, bool share_left = false);
     void stopStereoDepth();
 
     // Get the latest left half-frame from StereoDepth (only available when
@@ -106,60 +130,26 @@ public:
     bool getStereoLeftFrame(cv::Mat& out);
 
 private:
-    // Control TCP
-    SocketFd    control_sock_;
-    std::string control_ip_;
-    int         control_port_ = 0;
-    std::thread control_rxThread_;
-    std::atomic<bool> control_rxRun_{false};
-    std::mutex  control_send_mtx_;
+    RuntimeConfig cfg_;
+    SensorStore   sensors_;
 
-    // Sensor TCP
-    SocketFd    sensor_sock_;
-    std::string sensor_ip_;
-    int         sensor_port_ = 0;
-    std::thread sensor_rxThread_;
-    std::atomic<bool> sensor_rxRun_{false};
-    std::mutex  sensor_send_mtx_;
-
-    // Body IMU latest
-    std::atomic<float> imu_yaw_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<float> imu_pitch_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<float> imu_roll_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<int64_t> imu_stamp_ns_{0};
-
-    // PTU IMU latest
-    std::atomic<float> ptu_yaw_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<float> ptu_pitch_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<float> ptu_roll_{std::numeric_limits<float>::quiet_NaN()};
-    std::atomic<int64_t> ptu_imu_stamp_ns_{0};
-
-    // GPS latest (mutex-protected: GPSData is too large for a lock-free atomic)
-    mutable std::mutex gps_mtx_;
-    GPSData            gps_{};
-    std::atomic<int64_t> gps_stamp_ns_{0};
-
-    // Encoders latest
-    std::atomic<EncoderData> encoders_{};
-    std::atomic<int64_t> enc_stamp_ns_{0};
-
-    // TOF latest (from TCP now)
-    std::atomic<float> tof_dist_{-1.0f};
-    std::atomic<int64_t> tof_stamp_ns_{0};
-
-    // Detection FPS (set by ObjectDetection)
-    std::atomic<float> detection_fps_{0.0f};
-
-    // Stream quality 1-100 (JPEG quality sent to web, tunable at runtime)
-    std::atomic<int> stream_quality_{55};
-
-    // Active follow target person ID (set by ObjectDetection each frame)
-    std::atomic<int> target_person_id_{-1};
+    // Teensy TCP links
+    TeensyLink control_link_;
+    TeensyLink sensor_link_;
 
     // ObjectDetection pointer for set_target: command dispatch
     ObjectDetection* od_ptr_ = nullptr;
 
-    // Control mode
+    // BehaviorCoordinator (optional — if set, mode transitions go through it)
+    BehaviorCoordinator* coordinator_ = nullptr;
+
+    // MissionBehavior pointer for web command dispatch
+    MissionBehavior* mission_behavior_ = nullptr;
+
+    // Nav2Planner pointer for routing planned_path responses
+    Nav2Planner* nav2_planner_ = nullptr;
+
+    // Control mode (fallback when no coordinator is wired)
     std::atomic<int> mode_{0};   // ControlMode::FOLLOW by default
 
     // Web IPC
@@ -171,45 +161,20 @@ private:
     std::atomic<bool> web_rxRun_{false};
     std::mutex web_mtx_;
 
-    // Lidar data (populated by SLAM bridge, not SDK)
-    std::atomic<bool>     obstacle_{false};
-    std::atomic<float>    lidar_fwd_dist_{-1.0f};
-    std::atomic<int64_t>  lidar_stamp_ns_{0};
-    mutable std::mutex    scan_mtx_;
-    std::vector<std::pair<float,float>> latest_scan_;
-
     void broadcastScan();
+    void updateFromBridge(const std::string& line);
 
     // SLAM bridge
-    int               slam_sock_{-1};
-    mutable std::mutex slam_sock_mtx_;
-    std::thread       slam_rxThread_;
-    std::thread       slam_txThread_;
-    std::atomic<bool> slam_run_{false};
-    mutable std::mutex slam_pose_mtx_;
-    SlamPose          slam_pose_;
-
-    void updateFromBridge(const std::string& line);
+    SlamLink slam_link_;
 
     // Stereo depth camera instance
     StereoDepth stereo_depth_;
+    std::string stereo_device_;  // remembered for restart via web command
 
-    // Mission state
-    mutable std::mutex mission_mtx_;
-    std::string        mission_json_;
-    std::atomic<int>   mission_wp_idx_{-1};
-    std::atomic<bool>  mission_run_{false};
-    std::thread        mission_thread_;
-    std::atomic<int>   mission_fault_{0};   // MissionFault enum
+    // Mission runner
+    MissionRunner mission_;
 
-    // helpers
-    bool sendLine(int sock, std::mutex& mtx, const std::string& label, const std::string& line);
-    static int  openTcpSocket(const std::string& ip, int port);
-    static void controlRxLoop(Comms* self);
-    static void sensorRxLoop(Comms* self);
-    static void missionLoop(Comms* self);
-    void saveMission(const std::string& id, const std::string& json_str);
-    void saveMissionState(int wp_idx);
-    int  loadMissionState(const std::string& id);  // returns saved idx or 0
-    std::string listMissionsJson() const;
+    // NMEA parsing helpers (called from sensor rx callback)
+    void parseGGA(const std::string& line);
+    void parseRMC(const std::string& line);
 };

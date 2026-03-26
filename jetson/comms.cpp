@@ -1,7 +1,9 @@
 #include "comms.h"
 #include "helpers.h"
-#include "config.h"
 #include "object_detection.h"
+#include "behavior_coordinator.h"
+#include "mission_behavior.h"
+#include "nav2_planner.h"
 
 #include <nlohmann/json.hpp>
 
@@ -18,27 +20,15 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-// POSIX
+// POSIX / TCP (for Web IPC server)
 #include <unistd.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <sys/ioctl.h>
-
-// TCP
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>   // for TCP_NODELAY
+#include <arpa/inet.h>
 
 using Clock = std::chrono::steady_clock;
-using std::isfinite;
 
-static int64_t now_ns(){
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        Clock::now().time_since_epoch()).count();
-}
-
-Comms::Comms(){}
+Comms::Comms(const RuntimeConfig& cfg) : cfg_(cfg) {}
 Comms::~Comms(){
     closeControl();
     closeSensor();
@@ -47,413 +37,174 @@ Comms::~Comms(){
     stopStereoDepth();
 }
 
-// Opens a TCP socket to ip:port with a 2-second connect timeout and TCP_NODELAY.
-// Returns the socket FD, or -1 on failure. Never hangs indefinitely.
-int Comms::openTcpSocket(const std::string& ip, int port) {
-    int s = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return -1;
+// ── Control mode delegation ──────────────────────────────────────────────────
 
-    sockaddr_in sa{};
-    sa.sin_family = AF_INET;
-    sa.sin_port   = htons(port);
-    if (::inet_pton(AF_INET, ip.c_str(), &sa.sin_addr) <= 0){ ::close(s); return -1; }
+ControlMode Comms::getMode() const {
+    if (coordinator_) return coordinator_->currentMode();
+    return static_cast<ControlMode>(mode_.load());
+}
 
-    // Non-blocking connect with 2-second timeout so we never hang on startup
-    int flags = ::fcntl(s, F_GETFL, 0);
-    ::fcntl(s, F_SETFL, flags | O_NONBLOCK);
-
-    int rc = ::connect(s, (sockaddr*)&sa, sizeof(sa));
-    if (rc < 0 && errno != EINPROGRESS){ ::close(s); return -1; }
-
-    if (rc != 0) {   // EINPROGRESS — wait up to 2 seconds
-        fd_set wset;
-        FD_ZERO(&wset); FD_SET(s, &wset);
-        struct timeval tv{2, 0};
-        int sel = ::select(s + 1, nullptr, &wset, nullptr, &tv);
-        if (sel <= 0){ ::close(s); return -1; }   // timeout or error
-        int err = 0; socklen_t len = sizeof(err);
-        ::getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len);
-        if (err){ ::close(s); return -1; }
-    }
-
-    // Restore blocking mode for normal recv/send
-    ::fcntl(s, F_SETFL, flags);
-
-    struct timeval tv{0, 200000};
-    setsockopt(s, SOL_SOCKET,  SO_RCVTIMEO,  &tv,  sizeof(tv));
-    int flag = 1;
-    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
-    return s;
+void Comms::setMode(ControlMode m) {
+    if (coordinator_) { coordinator_->requestTransition(m); return; }
+    mode_.store(static_cast<int>(m));
 }
 
 bool Comms::connectControl(const std::string& ip, int port){
     closeControl();
-    int s = openTcpSocket(ip, port);
-    if (s < 0){
-        LOGE("connectControl failed to " << ip << ":" << port << " errno=" << errno);
-        return false;
-    }
-    control_sock_ = SocketFd(s);
-    control_ip_   = ip;
-    control_port_ = port;
-    LOGI("Connected to control " << ip << ":" << port << " for PTU/wheels.");
-    control_rxRun_.store(true);
-    control_rxThread_ = std::thread(&Comms::controlRxLoop, this);
-    return true;
+    return control_link_.open("Control", ip, port,
+        [this](const std::string& line) {
+            if (line.rfind("ENC", 0) == 0) {
+                int l, r;
+                if (std::sscanf(line.c_str() + 3, "%d %d", &l, &r) == 2)
+                    sensors_.setEncoders(l, r);
+            } else if (line.rfind("PTU_YPR", 0) == 0) {
+                float y, p, r;
+                if (std::sscanf(line.c_str() + 7, "%f %f %f", &y, &p, &r) == 3)
+                    sensors_.setPtuIMU(y, p, r);
+            }
+        });
 }
 
 bool Comms::connectSensor(const std::string& ip, int port){
     closeSensor();
-    int s = openTcpSocket(ip, port);
-    if (s < 0){
-        LOGE("connectSensor failed to " << ip << ":" << port << " errno=" << errno);
-        return false;
-    }
-    sensor_sock_ = SocketFd(s);
-    sensor_ip_   = ip;
-    sensor_port_ = port;
-    LOGI("Connected to sensor " << ip << ":" << port << " for IMU/GPS/encoders.");
-    sensor_rxRun_.store(true);
-    sensor_rxThread_ = std::thread(&Comms::sensorRxLoop, this);
-    imuOn();
-    imuRate(50.0f);
-    return true;
+    return sensor_link_.open("Sensor", ip, port,
+        [this](const std::string& line) {
+            if (line.rfind("YPR", 0) == 0 && line.rfind("PTU_YPR", 0) != 0) {
+                float y, p, r;
+                if (std::sscanf(line.c_str()+3, "%f %f %f", &y, &p, &r) == 3) {
+                    sensors_.setIMU(y, p, r);
+                    // Forward IMU to slam_bridge for ROS2 /imu/data topic
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf),
+                        R"({"type":"imu_data","yaw":%.4f,"pitch":%.4f,"roll":%.4f})", y, p, r);
+                    slam_link_.sendLine(buf);
+                }
+            } else if (line.rfind("PTU_YPR", 0) == 0) {
+                float y, p, r;
+                if (std::sscanf(line.c_str()+7, "%f %f %f", &y, &p, &r) == 3)
+                    sensors_.setPtuIMU(y, p, r);
+            } else if (line.rfind("TOF", 0) == 0) {
+                float d;
+                if (std::sscanf(line.c_str()+3, "%f", &d) == 1)
+                    sensors_.setTOF(d);
+            } else if (line.rfind("$GPGGA", 0) == 0 || line.rfind("$GNGGA", 0) == 0) {
+                parseGGA(line);
+            } else if (line.rfind("$GPRMC", 0) == 0 || line.rfind("$GNRMC", 0) == 0) {
+                parseRMC(line);
+            }
+        },
+        [this]() { imuOn(); imuRate(50.0f); });
 }
 
-void Comms::closeControl(){
-    if (control_rxRun_.exchange(false)){
-        if (control_rxThread_.joinable()) control_rxThread_.join();
-    }
-    control_sock_.close();
-}
-
-void Comms::closeSensor(){
-    if (sensor_rxRun_.exchange(false)){
-        if (sensor_rxThread_.joinable()) sensor_rxThread_.join();
-    }
-    sensor_sock_.close();
-}
-
-bool Comms::sendLine(int sock, std::mutex& mtx, const std::string& label, const std::string& line){
-    if (sock < 0) return false;
-    std::string out = line;
-    if (out.empty() || out.back() != '\n') out.push_back('\n');
-
-    LOGD(label << " >> \"" << line << "\"");
-
-    std::lock_guard<std::mutex> lk(mtx);
-    size_t to_send = out.size();
-    size_t sent = 0;
-    while (sent < to_send) {
-        ssize_t n = ::send(sock, out.data() + sent, to_send - sent, 0);
-        if (n < 0) {
-            LOGE("send() failed (" << n << "): " << strerror(errno));
-            return false;
-        }
-        sent += n;
-    }
-    return true;
-}
+void Comms::closeControl(){ control_link_.close(); }
+void Comms::closeSensor() { sensor_link_.close(); }
 
 bool Comms::sendPTUVelocity(float pan_sps, float tilt_sps){
     std::ostringstream oss;
     oss << "VP" << int(pan_sps) << "T" << int(tilt_sps);
-    return sendLine(control_sock_, control_send_mtx_, "PTU", oss.str());
+    return control_link_.sendLine(oss.str());
 }
 
 bool Comms::sendWheels(int left_sps, int right_sps){
     std::ostringstream oss;
     oss << "LS" << left_sps << "RS" << right_sps;
-    return sendLine(control_sock_, control_send_mtx_, "WHEELS", oss.str());
+    return control_link_.sendLine(oss.str());
 }
 
 bool Comms::imuOn(){
-    return sendLine(sensor_sock_, sensor_send_mtx_, "IMU", "IMU_ON");
+    return sensor_link_.sendLine("IMU_ON");
 }
 
 bool Comms::imuOff(){
-    return sendLine(sensor_sock_, sensor_send_mtx_, "IMU", "IMU_OFF");
+    return sensor_link_.sendLine("IMU_OFF");
 }
 
 bool Comms::imuRate(float hz){
     std::ostringstream oss;
     oss << "IMU_RATE " << int(hz);
-    return sendLine(sensor_sock_, sensor_send_mtx_, "IMU", oss.str());
+    return sensor_link_.sendLine(oss.str());
 }
 
-bool Comms::getLatestYPR(float& yaw, float& pitch, float& roll, double& age_ms) const{
-    yaw   = imu_yaw_.load();
-    pitch = imu_pitch_.load();
-    roll  = imu_roll_.load();
-    int64_t stamp = imu_stamp_ns_.load();
-    if (stamp == 0 || !isfinite(yaw) || !isfinite(pitch) || !isfinite(roll)) return false;
-    age_ms = (now_ns() - stamp) / 1e6;
-    return true;
-}
+// ── NMEA parsing helpers ────────────────────────────────────────────────────
 
-bool Comms::getLatestPtuYPR(float& yaw, float& pitch, float& roll, double& age_ms) const{
-    yaw   = ptu_yaw_.load();
-    pitch = ptu_pitch_.load();
-    roll  = ptu_roll_.load();
-    int64_t stamp = ptu_imu_stamp_ns_.load();
-    if (stamp == 0 || !isfinite(yaw) || !isfinite(pitch) || !isfinite(roll)) return false;
-    age_ms = (now_ns() - stamp) / 1e6;
-    return true;
-}
+void Comms::parseGGA(const std::string& line) {
+    size_t star_pos = line.find('*');
+    if (star_pos == std::string::npos) return;
+    std::string sentence = line.substr(0, star_pos);
+    std::stringstream ss(sentence);
+    std::string token;
+    std::vector<std::string> fields;
+    while (std::getline(ss, token, ',')) fields.push_back(token);
+    if ((fields.size() < 14 || fields.size() > 15) ||
+        (fields[0] != "$GPGGA" && fields[0] != "$GNGGA")) return;
 
-bool Comms::getLatestGPS(double& lat, double& lon, float& alt, float& speed_knots, float& course_deg, int& quality, int& sats, double& age_ms) const{
+    std::string lat_str = fields[2], ns = fields[3];
+    std::string lon_str = fields[4], ew = fields[5];
+    int quality = 0;
+    try { quality = std::stoi(fields[6]); } catch (...) { return; }
+    int sats = 0;
+    try { sats = std::stoi(fields[7]); } catch (...) { return; }
+    float alt = 0.0f;
+    try { alt = std::stof(fields[9]); } catch (...) { return; }
+
+    double lat_deg = 0.0;
+    size_t dot = lat_str.find('.');
+    if (dot != std::string::npos && dot >= 2) {
+        try {
+            int deg = std::stoi(lat_str.substr(0, dot-2));
+            double min = std::stod(lat_str.substr(dot-2));
+            lat_deg = deg + min / 60.0;
+            if (ns == "S") lat_deg = -lat_deg;
+        } catch (...) { return; }
+    } else return;
+
+    double lon_deg = 0.0;
+    dot = lon_str.find('.');
+    if (dot != std::string::npos && dot >= 3) {
+        try {
+            int deg = std::stoi(lon_str.substr(0, dot-2));
+            double min = std::stod(lon_str.substr(dot-2));
+            lon_deg = deg + min / 60.0;
+            if (ew == "W") lon_deg = -lon_deg;
+        } catch (...) { return; }
+    } else return;
+
     GPSData gps;
-    { std::lock_guard<std::mutex> lk(gps_mtx_); gps = gps_; }
-    if (!gps.valid) return false;
-    lat = gps.lat;
-    lon = gps.lon;
-    alt = gps.alt;
-    speed_knots = gps.speed_knots;
-    course_deg  = gps.course_deg;
-    quality     = gps.quality;
-    sats        = gps.sats;
-    int64_t stamp = gps_stamp_ns_.load();
-    if (stamp == 0) return false;
-    age_ms = (now_ns() - stamp) / 1e6;
-    return true;
+    gps.lat = lat_deg; gps.lon = lon_deg; gps.alt = alt;
+    gps.quality = quality; gps.sats = sats; gps.valid = (quality > 0);
+    sensors_.setGPS(gps);
+
+    // Forward GPS to slam_bridge for ROS2 /gps/fix topic
+    char gbuf[256];
+    std::snprintf(gbuf, sizeof(gbuf),
+        R"({"type":"gps_data","lat":%.8f,"lon":%.8f,"alt":%.2f,"quality":%d,"sats":%d})",
+        lat_deg, lon_deg, alt, quality, sats);
+    slam_link_.sendLine(gbuf);
 }
 
-bool Comms::getLatestEncoders(int& left, int& right, double& age_ms) const{
-    EncoderData enc = encoders_.load();
-    if (!enc.valid) return false;
-    left  = enc.left;
-    right = enc.right;
-    int64_t stamp = enc_stamp_ns_.load();
-    if (stamp == 0) return false;
-    age_ms = (now_ns() - stamp) / 1e6;
-    return true;
-}
+void Comms::parseRMC(const std::string& line) {
+    size_t star_pos = line.find('*');
+    if (star_pos == std::string::npos) return;
+    std::string sentence = line.substr(0, star_pos);
+    std::stringstream ss(sentence);
+    std::string token;
+    std::vector<std::string> fields;
+    while (std::getline(ss, token, ',')) fields.push_back(token);
+    if (fields.size() != 13 || (fields[0] != "$GPRMC" && fields[0] != "$GNRMC")) return;
+    if (fields[2] != "A") return;
 
-float Comms::getLatestDistance(double* age_ms) const{
-    float d = tof_dist_.load();
-    if (d < 0.0f) return -1.0f;
-    int64_t stamp = tof_stamp_ns_.load();
-    if (stamp == 0) return -1.0f;
-    if (age_ms) *age_ms = (now_ns() - stamp) / 1e6;
-    return d;
-}
+    float speed = 0.0f;
+    try { speed = std::stof(fields[7]); } catch (...) { return; }
+    float course = 0.0f;
+    try { course = std::stof(fields[8]); } catch (...) { return; }
 
-void Comms::controlRxLoop(Comms* self){
-    char buf[256];
-    std::string partial;
-    while (self->control_rxRun_.load()){
-        // Inner recv loop — parse ENC lines from control Teensy, discard everything else
-        bool connected = true;
-        partial.clear();
-        while (self->control_rxRun_.load() && connected){
-            ssize_t n = ::recv(self->control_sock_, buf, sizeof(buf)-1, 0);
-            if (n > 0){
-                buf[n] = '\0';
-                partial += buf;
-                size_t pos;
-                while ((pos = partial.find('\n')) != std::string::npos) {
-                    std::string line = partial.substr(0, pos);
-                    partial.erase(0, pos + 1);
-                    if (!line.empty() && line.back() == '\r') line.pop_back();
-                    if (line.rfind("ENC", 0) == 0) {
-                        int l, r;
-                        if (std::sscanf(line.c_str() + 3, "%d %d", &l, &r) == 2) {
-                            EncoderData enc; enc.left = l; enc.right = r; enc.valid = true;
-                            self->encoders_.store(enc);
-                            self->enc_stamp_ns_.store(now_ns());
-                        }
-                    } else if (line.rfind("PTU_YPR", 0) == 0) {
-                        float y, p, r;
-                        if (std::sscanf(line.c_str() + 7, "%f %f %f", &y, &p, &r) == 3) {
-                            self->ptu_yaw_.store(y);
-                            self->ptu_pitch_.store(p);
-                            self->ptu_roll_.store(r);
-                            self->ptu_imu_stamp_ns_.store(now_ns());
-                        }
-                    }
-                    // All other lines (ACKs, debug prints) are silently ignored
-                }
-            } else if (n == 0){
-                LOGW("Control TCP closed by peer");
-                connected = false;
-            } else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
-                LOGE("Control recv() failed: " << strerror(errno));
-                connected = false;
-            }
-        }
-        if (!self->control_rxRun_.load()) break;
+    sensors_.setGPSSpeed(speed, course);
 
-        // Reconnect with 2 s backoff
-        { std::lock_guard<std::mutex> lk(self->control_send_mtx_);
-          self->control_sock_.close(); }
-        while (self->control_rxRun_.load()){
-            LOGW("Control disconnected — reconnecting in 2 s...");
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            int s = openTcpSocket(self->control_ip_, self->control_port_);
-            if (s < 0) continue;
-            { std::lock_guard<std::mutex> lk(self->control_send_mtx_);
-              self->control_sock_ = SocketFd(s); }
-            LOGI("Control reconnected to " << self->control_ip_ << ":" << self->control_port_);
-            break;
-        }
-    }
-}
-
-void Comms::sensorRxLoop(Comms* self){
-    char buf[4096];
-
-    while (self->sensor_rxRun_.load()){
-        // Inner recv loop
-        std::string partial;
-        bool connected = true;
-        while (self->sensor_rxRun_.load() && connected){
-        ssize_t n = ::recv(self->sensor_sock_, buf, sizeof(buf), 0);
-        if (n > 0){
-            partial.append(buf, n);
-            size_t pos;
-            while ((pos = partial.find('\n')) != std::string::npos){
-                std::string line = partial.substr(0, pos);
-                partial.erase(0, pos+1);
-                // Parse line
-                if (line.rfind("YPR", 0) == 0 && line.rfind("PTU_YPR", 0) != 0){
-                    float y, p, r;
-                    if (std::sscanf(line.c_str()+3, "%f %f %f", &y, &p, &r) == 3){
-                        self->imu_yaw_.store(y);
-                        self->imu_pitch_.store(p);
-                        self->imu_roll_.store(r);
-                        self->imu_stamp_ns_.store(now_ns());
-                    }
-                } else if (line.rfind("PTU_YPR", 0) == 0){
-                    float y, p, r;
-                    if (std::sscanf(line.c_str()+7, "%f %f %f", &y, &p, &r) == 3){
-                        self->ptu_yaw_.store(y);
-                        self->ptu_pitch_.store(p);
-                        self->ptu_roll_.store(r);
-                        self->ptu_imu_stamp_ns_.store(now_ns());
-                    }
-                } else if (line.rfind("TOF", 0) == 0){
-                    float d;
-                    if (std::sscanf(line.c_str()+3, "%f", &d) == 1){
-                        self->tof_dist_.store(d);
-                        self->tof_stamp_ns_.store(now_ns());
-                    }
-                } else if (line.rfind("$GPGGA", 0) == 0 || line.rfind("$GNGGA", 0) == 0){
-                    // Parse GGA — accept both $GPGGA (GPS-only) and $GNGGA (multi-constellation)
-                    size_t star_pos = line.find('*');
-                    if (star_pos == std::string::npos) continue;
-                    std::string sentence = line.substr(0, star_pos);
-                    std::stringstream ss(sentence);
-                    std::string token;
-                    std::vector<std::string> fields;
-                    while (std::getline(ss, token, ',')) {
-                        fields.push_back(token);
-                    }
-                    if ((fields.size() < 14 || fields.size() > 15) || (fields[0] != "$GPGGA" && fields[0] != "$GNGGA")) continue;
-
-                    std::string lat_str = fields[2];
-                    std::string ns = fields[3];
-                    std::string lon_str = fields[4];
-                    std::string ew = fields[5];
-                    int quality = 0;
-                    try { quality = std::stoi(fields[6]); } catch (...) { continue; }
-                    int sats = 0;
-                    try { sats = std::stoi(fields[7]); } catch (...) { continue; }
-                    float alt = 0.0f;
-                    try { alt = std::stof(fields[9]); } catch (...) { continue; }
-
-                    // Parse lat
-                    double lat_deg = 0.0;
-                    size_t dot = lat_str.find('.');
-                    if (dot != std::string::npos && dot >= 2) {
-                        try {
-                            int deg = std::stoi(lat_str.substr(0, dot-2));
-                            double min = std::stod(lat_str.substr(dot-2));
-                            lat_deg = deg + min / 60.0;
-                            if (ns == "S") lat_deg = -lat_deg;
-                        } catch (...) { continue; }
-                    } else continue;
-
-                    // Parse lon
-                    double lon_deg = 0.0;
-                    dot = lon_str.find('.');
-                    if (dot != std::string::npos && dot >= 3) {
-                        try {
-                            int deg = std::stoi(lon_str.substr(0, dot-2));
-                            double min = std::stod(lon_str.substr(dot-2));
-                            lon_deg = deg + min / 60.0;
-                            if (ew == "W") lon_deg = -lon_deg;
-                        } catch (...) { continue; }
-                    } else continue;
-
-                    {
-                        std::lock_guard<std::mutex> lk(self->gps_mtx_);
-                        self->gps_.lat     = lat_deg;
-                        self->gps_.lon     = lon_deg;
-                        self->gps_.alt     = alt;
-                        self->gps_.quality = quality;
-                        self->gps_.sats    = sats;
-                        self->gps_.valid   = (quality > 0);
-                    }
-                    self->gps_stamp_ns_.store(now_ns());
-                } else if (line.rfind("$GPRMC", 0) == 0 || line.rfind("$GNRMC", 0) == 0){
-                    // Parse RMC — accept both $GPRMC (GPS-only) and $GNRMC (multi-constellation)
-                    size_t star_pos = line.find('*');
-                    if (star_pos == std::string::npos) continue;
-                    std::string sentence = line.substr(0, star_pos);
-                    std::stringstream ss(sentence);
-                    std::string token;
-                    std::vector<std::string> fields;
-                    while (std::getline(ss, token, ',')) {
-                        fields.push_back(token);
-                    }
-                    if (fields.size() != 13 || (fields[0] != "$GPRMC" && fields[0] != "$GNRMC")) continue;
-
-                    std::string status = fields[2];
-                    if (status != "A") continue;
-
-                    float speed = 0.0f;
-                    try { speed = std::stof(fields[7]); } catch (...) { continue; }
-                    float course = 0.0f;
-                    try { course = std::stof(fields[8]); } catch (...) { continue; }
-
-                    {
-                        std::lock_guard<std::mutex> lk(self->gps_mtx_);
-                        self->gps_.speed_knots = speed;
-                        self->gps_.course_deg  = course;
-                    }
-                    self->gps_stamp_ns_.store(now_ns());
-                }
-                // ignore other lines (ENC comes from control Teensy, not sensor)
-            }
-        } else if (n == 0){
-            LOGW("Sensor TCP closed by peer");
-            connected = false;
-        } else {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
-            LOGE("Sensor recv() failed: " << strerror(errno) << " (" << errno << ")");
-            connected = false;
-        }
-        } // end inner recv loop
-
-        if (!self->sensor_rxRun_.load()) break;
-
-        // Reconnect with 2 s backoff; re-enable IMU on success
-        { std::lock_guard<std::mutex> lk(self->sensor_send_mtx_);
-          self->sensor_sock_.close(); }
-        while (self->sensor_rxRun_.load()){
-            LOGW("Sensor disconnected — reconnecting in 2 s...");
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            int s = openTcpSocket(self->sensor_ip_, self->sensor_port_);
-            if (s < 0) continue;
-            { std::lock_guard<std::mutex> lk(self->sensor_send_mtx_);
-              self->sensor_sock_ = SocketFd(s); }
-            LOGI("Sensor reconnected to " << self->sensor_ip_ << ":" << self->sensor_port_);
-            self->imuOn();
-            self->imuRate(50.0f);
-            break;
-        }
-    } // end outer reconnect loop
+    // Forward speed/course to slam_bridge for heading calibration
+    char rbuf[128];
+    std::snprintf(rbuf, sizeof(rbuf),
+        R"({"type":"gps_rmc","speed_knots":%.2f,"course_deg":%.2f})", speed, course);
+    slam_link_.sendLine(rbuf);
 }
 
 // Web IPC implementation
@@ -525,7 +276,7 @@ bool Comms::startWebIPC(int port) {
                 if (!alive) break;
                 // Push status to server.js every 1 second (keeps telemetry live without commands)
                 auto now = Clock::now();
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPush).count() >= 1000) {
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPush).count() >= cfg_.status_push_interval_ms) {
                     std::string s = getStatusJson() + "\n";
                     if (::send(client, s.c_str(), s.size(), MSG_NOSIGNAL) < 0) break;
                     lastPush = now;
@@ -542,9 +293,7 @@ bool Comms::startWebIPC(int port) {
 }
 
 void Comms::stopWebIPC() {
-    // Stop mission thread first
-    if (mission_run_.exchange(false))
-        if (mission_thread_.joinable()) mission_thread_.join();
+    mission_.abort();
 
     web_rxRun_.store(false);
     web_sock_.close();
@@ -564,7 +313,7 @@ void Comms::sendWebEvent(const std::string& json_str) {
 std::string Comms::getStatusJson() const {
     nlohmann::json j;
 
-    constexpr double STALE_THRESHOLD_MS = 2000.0;
+    const double STALE_THRESHOLD_MS = cfg_.telemetry_stale_ms;
 
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f; double iage = 99999.0;
     getLatestYPR(yaw, pitch, roll, iage);
@@ -589,40 +338,54 @@ std::string Comms::getStatusJson() const {
     double lage = 99999.0;
     j["lidar_fwd_m"]      = getLatestLidarFwdDist(&lage);
     j["lidar_fwd_age_ms"] = lage;
-    j["lidar_obstacle"]   = obstacle_.load();
+    j["lidar_obstacle"]   = sensors_.hasObstacle();
 
     {
-        SlamPose sp = getSlamPose();
+        auto sp = sensors_.getSlamPose();
         j["slam_pose"] = {{"x",sp.x},{"y",sp.y},{"theta",sp.theta},{"valid",sp.valid}};
     }
 
-    j["detection_fps"]    = detection_fps_.load();
-    j["stream_quality"]   = stream_quality_.load();
-    j["target_person_id"] = target_person_id_.load();
+    j["detection_fps"]    = sensors_.getDetectionFPS();
+    j["stream_quality"]   = sensors_.getStreamQuality();
+    j["target_person_id"] = sensors_.getTargetPersonId();
+
+    // Generic sensor slots — auto-serialised, no code changes needed per sensor
+    {
+        auto generics = sensors_.getAllGeneric();
+        if (!generics.empty()) {
+            nlohmann::json gen;
+            for (auto& [key, reading] : generics) {
+                double age = (steady_now_ns() - reading.stamp_ns) / 1e6;
+                gen[key] = {{"value", reading.value}, {"age_ms", age},
+                            {"stale", age > STALE_THRESHOLD_MS}};
+            }
+            j["sensors"] = gen;
+        }
+    }
 
     // Control mode
     static const char* modeNames[] = {"follow", "manual", "mission", "stopped"};
-    int m = mode_.load();
+    int m = static_cast<int>(getMode());
     j["mode"] = modeNames[std::clamp(m, 0, 3)];
 
     // Mission status
     static const char* faultNames[] = {"", "gps_lost", "stuck", "wheel_fail"};
-    int fault = std::clamp(mission_fault_.load(), 0, 3);
+    int fault = std::clamp(mission_.fault(), 0, 3);
 
     nlohmann::json ms;
-    ms["running"]      = mission_run_.load();
-    ms["waypoint_idx"] = mission_wp_idx_.load();
+    ms["running"]      = mission_.running();
+    ms["waypoint_idx"] = mission_.waypointIdx();
     ms["fault"]        = faultNames[fault];
     {
-        std::lock_guard<std::mutex> lk(mission_mtx_);
-        if (!mission_json_.empty()) {
+        std::string mj_str = mission_.missionJson();
+        if (!mj_str.empty()) {
             try {
-                auto mj = nlohmann::json::parse(mission_json_);
+                auto mj = nlohmann::json::parse(mj_str);
                 ms["id"]             = mj.value("id", "");
                 ms["name"]           = mj.value("name", "");
                 ms["waypoint_count"] = mj.contains("waypoints")
                                        ? (int)mj["waypoints"].size() : 0;
-                int idx = mission_wp_idx_.load();
+                int idx = mission_.waypointIdx();
                 if (mj.contains("waypoints") && idx >= 0 &&
                     idx < (int)mj["waypoints"].size()) {
                     auto& twp = mj["waypoints"][idx];
@@ -641,19 +404,15 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     LOGI("Web cmd: " << cmd.substr(0, 80));   // truncate long mission JSON in log
 
     // ── Stop / Emergency ──────────────────────────────────────────────────────
+    // Coordinator doTransition() zeros all actuators and calls onExit() on the
+    // active behavior (which aborts the mission if in MISSION mode).
     if (cmd == "stop_follow" || cmd == "emergency_stop") {
-        if (mission_run_.exchange(false))
-            if (mission_thread_.joinable()) mission_thread_.join();
         setMode(ControlMode::STOPPED);
-        sendWheels(0, 0);
-        sendPTUVelocity(0, 0);
         return "";
     }
 
     // ── Resume autonomous follow ───────────────────────────────────────────────
     if (cmd == "resume_follow") {
-        if (mission_run_.exchange(false))
-            if (mission_thread_.joinable()) mission_thread_.join();
         setMode(ControlMode::FOLLOW);
         return "";
     }
@@ -670,7 +429,7 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     // ── Manual PTU centre ─────────────────────────────────────────────────────
     if (cmd == "manual_ptu:centre") {
         sendPTUVelocity(0, 0);                                          // stop velocity
-        sendLine(control_sock_, control_send_mtx_, "PTU", "P0T0");     // hard position centre
+        control_link_.sendLine("P0T0");     // hard position centre
         return "";
     }
 
@@ -688,7 +447,7 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         try {
             auto mj = nlohmann::json::parse(json_str);
             std::string id = mj.value("id", "unknown");
-            saveMission(id, json_str);
+            mission_.saveMission(id, json_str, cfg_.missions_dir);
             LOGI("Mission saved (pushed, not started): " << id);
         } catch (const std::exception& e) {
             LOGE("mission_save bad JSON: " << e.what());
@@ -702,22 +461,13 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         try {
             auto mj = nlohmann::json::parse(json_str);
             std::string id = mj.value("id", "unknown");
-
-            // Save to disk so Jetson can reload after restart
-            saveMission(id, json_str);
-
-            // Stop any running mission
-            if (mission_run_.exchange(false))
-                if (mission_thread_.joinable()) mission_thread_.join();
-
-            {
-                std::lock_guard<std::mutex> lk(mission_mtx_);
-                mission_json_ = json_str;
+            mission_.saveMission(id, json_str, cfg_.missions_dir);
+            if (mission_behavior_) {
+                mission_behavior_->loadMission(json_str);
+                setMode(ControlMode::MISSION);
+            } else {
+                mission_.start(json_str, this, cfg_);
             }
-            mission_wp_idx_.store(0);
-            mission_run_.store(true);
-            setMode(ControlMode::MISSION);
-            mission_thread_ = std::thread(&Comms::missionLoop, this);
             LOGI("Mission started: " << id);
         } catch (const std::exception& e) {
             LOGE("mission_start bad JSON: " << e.what());
@@ -727,11 +477,7 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
 
     // ── Mission abort ─────────────────────────────────────────────────────────
     if (cmd == "mission_abort") {
-        if (mission_run_.exchange(false))
-            if (mission_thread_.joinable()) mission_thread_.join();
-        setMode(ControlMode::STOPPED);
-        sendWheels(0, 0);
-        sendPTUVelocity(0, 0);
+        setMode(ControlMode::STOPPED);   // coordinator exits MISSION → onExit aborts runner
         LOGI("Mission aborted");
         return "";
     }
@@ -739,10 +485,9 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     // ── Load a saved mission by ID and start it ────────────────────────────────
     if (cmd.rfind("mission_load:", 0) == 0) {
         std::string id = cmd.substr(13);
-        // Sanitise id — alphanumeric, underscore, hyphen only
         id.erase(std::remove_if(id.begin(), id.end(),
             [](char c){ return !isalnum(c) && c != '_' && c != '-'; }), id.end());
-        std::string path = MISSIONS_DIR + "/" + id + ".json";
+        std::string path = cfg_.missions_dir + "/" + id + ".json";
         std::ifstream f(path);
         if (f.is_open()) {
             std::string json_str((std::istreambuf_iterator<char>(f)),
@@ -756,15 +501,12 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
 
     // ── List saved missions ────────────────────────────────────────────────────
     if (cmd == "list_missions") {
-        return listMissionsJson();
+        return MissionRunner::listMissionsJson(cfg_.missions_dir);
     }
 
     // ── Skip current waypoint ─────────────────────────────────────────────────
     if (cmd == "mission_skip_wp") {
-        if (mission_run_.load()) {
-            int nxt = mission_wp_idx_.fetch_add(1) + 1;
-            LOGI("Mission: skipping to WP " << nxt);
-        }
+        mission_.skipWaypoint();
         return "";
     }
 
@@ -773,24 +515,12 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         std::string id = cmd.substr(15);
         id.erase(std::remove_if(id.begin(), id.end(),
             [](char c){ return !isalnum(c) && c != '_' && c != '-'; }), id.end());
-        std::string path = MISSIONS_DIR + "/" + id + ".json";
-        std::ifstream f(path);
-        if (!f.is_open()) { LOGE("mission_resume: not found: " << id); return ""; }
-        std::string json_str((std::istreambuf_iterator<char>(f)),
-                              std::istreambuf_iterator<char>());
-        int saved_idx = loadMissionState(id);
-        if (mission_run_.exchange(false))
-            if (mission_thread_.joinable()) mission_thread_.join();
-        {
-            std::lock_guard<std::mutex> lk(mission_mtx_);
-            mission_json_ = json_str;
+        if (mission_behavior_) {
+            mission_behavior_->loadResume(id);
+            setMode(ControlMode::MISSION);
+        } else {
+            mission_.resume(id, this, cfg_);
         }
-        mission_wp_idx_.store(saved_idx);
-        mission_fault_.store(0);
-        mission_run_.store(true);
-        setMode(ControlMode::MISSION);
-        mission_thread_ = std::thread(&Comms::missionLoop, this);
-        LOGI("Mission resumed at WP " << saved_idx << ": " << id);
         return "";
     }
 
@@ -820,7 +550,7 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     }
 
     // ── Stereo depth camera ───────────────────────────────────────────────────
-    if (cmd == "stereo_start") { startStereoDepth(); return ""; }
+    if (cmd == "stereo_start") { startStereoDepth(stereo_device_); return ""; }
     if (cmd == "stereo_stop")  { stopStereoDepth();  return ""; }
 
     // ── Stream quality: stream_quality:<1-100> ────────────────────────────────
@@ -828,7 +558,7 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         try {
             int q = std::stoi(cmd.substr(15));
             q = std::clamp(q, 1, 100);
-            stream_quality_.store(q);
+            sensors_.setStreamQuality(q);
             LOGI("Stream quality set to " << q);
         } catch (...) {}
         return "";
@@ -838,555 +568,35 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     return "";
 }
 
-// ── Mission persistence ────────────────────────────────────────────────────────
-
-void Comms::saveMission(const std::string& id, const std::string& json_str) {
-    ::mkdir(MISSIONS_DIR.c_str(), 0755);
-    std::string path = MISSIONS_DIR + "/" + id + ".json";
-    std::ofstream f(path);
-    if (f.is_open()) {
-        f << json_str;
-        LOGI("Mission saved: " << path);
-    } else {
-        LOGE("Mission save failed: " << path);
-    }
-}
-
-std::string Comms::listMissionsJson() const {
-    nlohmann::json list = nlohmann::json::array();
-    DIR* dir = opendir(MISSIONS_DIR.c_str());
-    if (dir) {
-        struct dirent* ent;
-        while ((ent = readdir(dir)) != nullptr) {
-            std::string fname = ent->d_name;
-            if (fname.size() < 5 || fname.substr(fname.size()-5) != ".json") continue;
-            std::string path = MISSIONS_DIR + "/" + fname;
-            std::ifstream f(path);
-            if (!f.is_open()) continue;
-            std::string content((std::istreambuf_iterator<char>(f)),
-                                 std::istreambuf_iterator<char>());
-            try {
-                auto mj = nlohmann::json::parse(content);
-                nlohmann::json entry;
-                entry["id"]            = mj.value("id", "");
-                entry["name"]          = mj.value("name", "");
-                entry["type"]          = mj.value("type", "");
-                entry["waypoint_count"] = mj.contains("waypoints")
-                                         ? (int)mj["waypoints"].size() : 0;
-                list.push_back(entry);
-            } catch (...) {}
-        }
-        closedir(dir);
-    }
-    nlohmann::json resp;
-    resp["type"]     = "missions";
-    resp["missions"] = list;
-    return resp.dump();
-}
-
-// ── Mission state persistence ──────────────────────────────────────────────────
-
-void Comms::saveMissionState(int wp_idx) {
-    nlohmann::json state;
-    {
-        std::lock_guard<std::mutex> lk(mission_mtx_);
-        state["mission_json"] = mission_json_;
-    }
-    state["waypoint_idx"] = wp_idx;
-    std::string path = MISSIONS_DIR + "/_state.json";
-    std::ofstream f(path);
-    if (f.is_open()) f << state.dump();
-}
-
-int Comms::loadMissionState(const std::string& target_id) {
-    std::string path = MISSIONS_DIR + "/_state.json";
-    std::ifstream f(path);
-    if (!f.is_open()) return 0;
-    try {
-        nlohmann::json state = nlohmann::json::parse(f);
-        std::string json_str = state.value("mission_json", "");
-        if (json_str.empty()) return 0;
-        auto mj = nlohmann::json::parse(json_str);
-        if (mj.value("id", "") != target_id) return 0;   // different mission
-        return state.value("waypoint_idx", 0);
-    } catch (...) { return 0; }
-}
-
-// ── GPS navigation helpers ─────────────────────────────────────────────────────
-
-static double haversineM(double lat1, double lon1, double lat2, double lon2) {
-    constexpr double R = 6371000.0;
-    double dLat = (lat2 - lat1) * M_PI / 180.0;
-    double dLon = (lon2 - lon1) * M_PI / 180.0;
-    double a = std::sin(dLat/2)*std::sin(dLat/2)
-             + std::cos(lat1*M_PI/180)*std::cos(lat2*M_PI/180)
-               *std::sin(dLon/2)*std::sin(dLon/2);
-    return R * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
-}
-
-static double bearingDeg(double lat1, double lon1, double lat2, double lon2) {
-    double dLon = (lon2 - lon1) * M_PI / 180.0;
-    lat1 *= M_PI / 180.0;
-    lat2 *= M_PI / 180.0;
-    double y = std::sin(dLon) * std::cos(lat2);
-    double x = std::cos(lat1)*std::sin(lat2) - std::sin(lat1)*std::cos(lat2)*std::cos(dLon);
-    return std::fmod(std::atan2(y, x) * 180.0 / M_PI + 360.0, 360.0);
-}
-
-// ── Mission executor thread ────────────────────────────────────────────────────
-//
-// Hardened for real-world use:
-//  - Stops wheels immediately if GPS is lost; aborts after 30s
-//  - Detects physical "stuck" via GPS position progress every 30s
-//  - Calibrates heading: uses GPS course when moving, IMU+offset when slow
-//  - Checks sendWheels() return value; sets WHEEL fault if control link is down
-//  - Implements loop, returnToStart, and all arrival actions
-//  - Persists waypoint index to disk so mission can be resumed after Jetson reboot
-//
-void Comms::missionLoop(Comms* self) {
-    LOGI("Mission executor started");
-
-    // ── Parse mission JSON ────────────────────────────────────────────────────
-    // Snapshot the JSON string under the lock so a concurrent mission_start /
-    // mission_resume command cannot modify mission_json_ while we are parsing
-    // or iterating waypoints.
-    std::string json_copy;
-    { std::lock_guard<std::mutex> lk(self->mission_mtx_); json_copy = self->mission_json_; }
-    nlohmann::json mission;
-    try { mission = nlohmann::json::parse(json_copy); }
-    catch (const std::exception& e) {
-        LOGE("Mission: bad JSON: " << e.what());
-        self->mission_run_.store(false); self->setMode(ControlMode::STOPPED); return;
-    }
-    if (!mission.contains("waypoints") || !mission["waypoints"].is_array()
-        || mission["waypoints"].empty()) {
-        LOGE("Mission: no waypoints");
-        self->mission_run_.store(false); self->setMode(ControlMode::STOPPED); return;
-    }
-
-    // ── Validate all waypoint coordinates ─────────────────────────────────────
-    auto& waypoints = mission["waypoints"];
-    int n = (int)waypoints.size();
-    for (int i = 0; i < n; i++) {
-        double lat = waypoints[i].value("lat", 0.0);
-        double lon = waypoints[i].value("lng", waypoints[i].value("lon", 0.0));
-        if (std::abs(lat) < 0.001 && std::abs(lon) < 0.001) {
-            LOGE("Mission: WP" << i << " has invalid coordinates (0,0) — aborting");
-            self->mission_run_.store(false); self->setMode(ControlMode::STOPPED); return;
-        }
-    }
-
-    bool do_loop   = mission.value("loop", false);
-    bool do_return = mission.value("returnToStart", false);
-
-    // ── Heading calibration state (persists across waypoints) ─────────────────
-    // We calibrate IMU yaw against GPS course when moving, then use the offset
-    // when stationary (GPS course is junk below ~1 km/h).
-    double heading_offset     = 0.0;   // gps_course - imu_yaw when moving
-    bool   heading_calibrated = false;
-
-    // ── Helper: navigate to a single lat/lon ──────────────────────────────────
-    // Returns true=arrived, false=timeout/abort/fault.
-    // Mutates heading_offset/heading_calibrated as the robot moves.
-    auto navigateTo = [&](double wp_lat, double wp_lon,
-                          int wp_speed_sps, float arrive_r,
-                          double timeout_s) -> bool
-    {
-        constexpr double GPS_LOSS_ABORT_S  = 30.0;
-        constexpr double STUCK_CHECK_S     = 30.0;
-        constexpr double STUCK_MIN_MOVE_M  = 0.5;
-        constexpr double STEER_GAIN        = 50.0;  // SPS per degree of heading error
-        constexpr double MAX_STEER_FRAC    = 0.6;
-        constexpr double MOVING_KNOTS      = 0.5;   // speed threshold for GPS course use
-
-        auto t_start     = Clock::now();
-        auto gps_ok_last = Clock::now();
-        auto stuck_t     = Clock::now();
-        double stuck_ref_lat = wp_lat, stuck_ref_lon = wp_lon;
-        bool   stuck_ref_init = false;
-
-        while (self->mission_run_.load()) {
-            // ── GPS quality check ────────────────────────────────────────────
-            double lat, lon; float alt, spd, crs; int qual, sats; double gps_age;
-            bool have_gps = self->getLatestGPS(lat, lon, alt, spd, crs, qual, sats, gps_age);
-
-            if (!have_gps || gps_age > 2000.0 || qual < 1) {
-                double down_s = std::chrono::duration<double>(Clock::now() - gps_ok_last).count();
-                self->mission_fault_.store((int)MissionFault::GPS_LOST);
-                self->sendWheels(0, 0);   // stop while GPS is out — never run blind
-                if (down_s >= GPS_LOSS_ABORT_S) {
-                    LOGE("Mission: GPS down " << (int)down_s << "s — aborting");
-                    self->mission_run_.store(false);
-                    self->setMode(ControlMode::STOPPED);
-                    return false;
-                }
-                LOGW("Mission: GPS lost (" << (int)down_s << "/" << (int)GPS_LOSS_ABORT_S << "s)");
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                continue;
-            }
-            gps_ok_last = Clock::now();
-            self->mission_fault_.store((int)MissionFault::NONE);
-
-            if (!stuck_ref_init) {
-                stuck_ref_lat = lat; stuck_ref_lon = lon;
-                stuck_ref_init = true;
-            }
-
-            // ── Arrived? ────────────────────────────────────────────────────
-            double dist   = haversineM(lat, lon, wp_lat, wp_lon);
-            double target = bearingDeg(lat, lon, wp_lat, wp_lon);
-            if (dist <= arrive_r) return true;
-
-            // ── Nav timeout ─────────────────────────────────────────────────
-            double elapsed_s = std::chrono::duration<double>(Clock::now() - t_start).count();
-            if (elapsed_s > timeout_s) {
-                LOGW("Mission: nav timeout (" << (int)timeout_s << "s) — skipping WP");
-                return false;
-            }
-
-            // ── Stuck detection ──────────────────────────────────────────────
-            double stuck_elapsed = std::chrono::duration<double>(Clock::now() - stuck_t).count();
-            if (stuck_elapsed >= STUCK_CHECK_S && wp_speed_sps > 500) {
-                double moved = haversineM(stuck_ref_lat, stuck_ref_lon, lat, lon);
-                if (moved < STUCK_MIN_MOVE_M) {
-                    LOGE("Mission: STUCK — only moved " << moved << "m in "
-                         << (int)STUCK_CHECK_S << "s");
-                    self->mission_fault_.store((int)MissionFault::STUCK);
-                    self->sendWheels(0, 0);
-                    self->mission_run_.store(false);
-                    self->setMode(ControlMode::STOPPED);
-                    return false;
-                }
-                stuck_ref_lat = lat; stuck_ref_lon = lon;
-                stuck_t = Clock::now();
-            }
-
-            // ── Calibrate heading: GPS course vs IMU yaw ────────────────────
-            // GPS course is the true direction of travel but meaningless below ~1 km/h.
-            // We learn the IMU→GPS offset while moving and apply it when stopped.
-            if (spd > MOVING_KNOTS) {
-                float yaw, pitch, roll; double imu_age;
-                if (self->getLatestYPR(yaw, pitch, roll, imu_age) && imu_age < 500.0) {
-                    double raw_offset = std::fmod(crs - yaw + 360.0, 360.0);
-                    if (!heading_calibrated) {
-                        heading_offset = raw_offset;
-                        heading_calibrated = true;
-                    } else {
-                        // Low-pass filter to dampen sensor noise
-                        heading_offset = heading_offset * 0.95 + raw_offset * 0.05;
-                    }
-                }
-            }
-
-            double heading;
-            if (spd > MOVING_KNOTS) {
-                heading = std::fmod(crs + 360.0, 360.0);
-            } else if (heading_calibrated) {
-                float yaw, pitch, roll; double imu_age;
-                if (self->getLatestYPR(yaw, pitch, roll, imu_age) && imu_age < 500.0)
-                    heading = std::fmod(yaw + heading_offset + 360.0, 360.0);
-                else
-                    heading = std::fmod(crs + 360.0, 360.0);
-            } else {
-                heading = std::fmod(crs + 360.0, 360.0);
-            }
-
-            // ── Proportional differential steering ──────────────────────────
-            double herr = target - heading;
-            while (herr >  180.0) herr -= 360.0;
-            while (herr < -180.0) herr += 360.0;
-            double steer = std::clamp(herr * STEER_GAIN,
-                                      -wp_speed_sps * MAX_STEER_FRAC,
-                                       wp_speed_sps * MAX_STEER_FRAC);
-            int L = std::clamp((int)(wp_speed_sps - steer), -WHEEL_MAX_SPS, WHEEL_MAX_SPS);
-            int R = std::clamp((int)(wp_speed_sps + steer), -WHEEL_MAX_SPS, WHEEL_MAX_SPS);
-
-            // ── Check wheel command delivery ─────────────────────────────────
-            if (!self->sendWheels(L, R)) {
-                self->mission_fault_.store((int)MissionFault::WHEEL);
-                LOGW("Mission: wheel send failed — control link down? Waiting...");
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                continue;
-            }
-            self->mission_fault_.store((int)MissionFault::NONE);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        return false;  // mission_run_ was cleared externally
-    };
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Main mission loop (outer = loop support, inner = per-waypoint)
-    // ─────────────────────────────────────────────────────────────────────────
-    do {
-        int n_wps = (int)waypoints.size();
-        while (self->mission_run_.load()) {
-            int idx = self->mission_wp_idx_.load();
-            if (idx >= n_wps) break;  // all waypoints done
-
-            auto& wp = waypoints[idx];
-            double wp_lat   = wp.value("lat", 0.0);
-            double wp_lon   = wp.value("lng", wp.value("lon", 0.0));
-            float  spd_pct  = wp.value("speed", 60.0f);   // UI sends 0-100 %
-            int    wp_sps   = std::clamp((int)(spd_pct / 100.0f * WHEEL_MAX_SPS),
-                                         100, WHEEL_MAX_SPS);
-            float  radius   = wp.value("arrivalRadius", wp.value("radius_m", 3.0f));
-            std::string action = wp.value("arrivalAction", wp.value("action", "continue"));
-
-            LOGI("Mission: WP " << idx << "/" << (n_wps-1)
-                 << " action=" << action
-                 << " lat=" << wp_lat << " lon=" << wp_lon);
-
-            // ── Navigate to this waypoint ────────────────────────────────────
-            bool arrived = navigateTo(wp_lat, wp_lon, wp_sps, radius, 120.0);
-            self->sendWheels(0, 0);
-
-            if (!self->mission_run_.load()) break;  // aborted during nav
-
-            // ── Arrival action ───────────────────────────────────────────────
-            if (arrived) {
-                if (action == "wait" || action == "stop") {
-                    float wait_s = wp.value("waitSeconds", wp.value("dwell_s", 5.0f));
-                    LOGI("Mission: WP" << idx << " wait " << wait_s << "s");
-                    float el = 0.0f;
-                    while (self->mission_run_.load() && el < wait_s)
-                        { std::this_thread::sleep_for(std::chrono::milliseconds(100)); el += 0.1f; }
-
-                } else if (action == "scan") {
-                    float from = wp.value("scanFrom", -90.0f);
-                    float to   = wp.value("scanTo",    90.0f);
-                    float sspd = wp.value("scanSpeed",  200.0f);
-                    // Time-based PTU sweep (tune MS_PER_DEG for your PTU gear ratio)
-                    constexpr float MS_PER_DEG = 10.0f;
-                    float sweep_ms = std::abs(to - from) * MS_PER_DEG;
-                    float dir = (to > from) ? 1.0f : -1.0f;
-                    LOGI("Mission: PTU scan " << from << "° to " << to << "°");
-                    self->sendPTUVelocity(dir * sspd, 0);
-                    auto ts = Clock::now();
-                    while (self->mission_run_.load()) {
-                        if (std::chrono::duration<float,std::milli>(Clock::now()-ts).count() >= sweep_ms) break;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                    }
-                    // Return to centre
-                    self->sendPTUVelocity(-dir * sspd, 0);
-                    ts = Clock::now();
-                    while (self->mission_run_.load()) {
-                        if (std::chrono::duration<float,std::milli>(Clock::now()-ts).count() >= sweep_ms/2) break;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                    }
-                    self->sendPTUVelocity(0, 0);
-
-                } else if (action == "set_ptu") {
-                    float pan  = wp.value("ptuPan",  0.0f);
-                    float tilt = wp.value("ptuTilt", 0.0f);
-                    LOGI("Mission: set PTU pan=" << pan << " tilt=" << tilt);
-                    self->sendPTUVelocity(pan, tilt);
-
-                } else if (action == "follow") {
-                    float dur = wp.value("followDuration", 0.0f);
-                    LOGI("Mission: follow mode for " << (dur > 0 ? std::to_string((int)dur)+"s" : "unlimited"));
-                    self->setMode(ControlMode::FOLLOW);
-                    if (dur > 0.0f) {
-                        float el = 0.0f;
-                        while (self->mission_run_.load() && el < dur)
-                            { std::this_thread::sleep_for(std::chrono::milliseconds(100)); el += 0.1f; }
-                        self->setMode(ControlMode::MISSION);
-                    } else {
-                        // Unlimited follow — mission thread exits, Movement takes over
-                        self->mission_run_.store(false);
-                        LOGI("Mission executor yielding to FOLLOW mode");
-                        return;
-                    }
-
-                } else if (action == "custom") {
-                    std::string ccmd = wp.value("customCommand", "");
-                    if (!ccmd.empty()) {
-                        LOGI("Mission: custom cmd: " << ccmd);
-                        self->handleWebCommand(ccmd);
-                    }
-                }
-                // "continue" — fall through, advance immediately
-            }
-
-            // ── Advance waypoint + persist state ────────────────────────────
-            int next_idx = idx + 1;
-            self->mission_wp_idx_.store(next_idx);
-            self->saveMissionState(next_idx);
-        }
-
-        if (!self->mission_run_.load()) break;  // aborted
-
-        // ── Return to start? ─────────────────────────────────────────────────
-        if (do_return && n > 0) {
-            LOGI("Mission: returning to start");
-            auto& sp    = waypoints[0];
-            double slat = sp.value("lat", 0.0);
-            double slon = sp.value("lng", sp.value("lon", 0.0));
-            float  srad = sp.value("arrivalRadius", 3.0f);
-            navigateTo(slat, slon, WHEEL_MAX_SPS / 3, srad, 120.0);
-            self->sendWheels(0, 0);
-        }
-
-        if (!self->mission_run_.load()) break;
-
-        // ── Loop? ────────────────────────────────────────────────────────────
-        if (do_loop) {
-            LOGI("Mission: looping back to WP 0");
-            self->mission_wp_idx_.store(0);
-            self->saveMissionState(0);
-            // continue outer do-while
-        }
-
-    } while (do_loop && self->mission_run_.load());
-
-    // ── Complete ──────────────────────────────────────────────────────────────
-    bool natural_completion = self->mission_run_.load();
-    if (natural_completion) {
-        LOGI("Mission: complete");
-        self->sendWheels(0, 0);
-        self->sendPTUVelocity(0, 0);
-        self->mission_run_.store(false);
-        self->setMode(ControlMode::STOPPED);
-        // Clear saved state so a stale resume doesn't restart a completed mission
-        std::remove((MISSIONS_DIR + "/_state.json").c_str());
-    }
-
-    // ── Fire mission event to VPS ─────────────────────────────────────────────
-    {
-        std::string mission_id, mission_name;
-        {
-            std::lock_guard<std::mutex> lk(self->mission_mtx_);
-            try {
-                auto m = nlohmann::json::parse(self->mission_json_);
-                mission_id   = m.value("id",   "");
-                mission_name = m.value("name", "");
-            } catch (...) {}
-        }
-
-        nlohmann::json ev;
-        ev["type"] = "event";
-        ev["id"]   = mission_id;
-        ev["name"] = mission_name;
-
-        if (natural_completion) {
-            ev["event"] = "mission_completed";
-            LOGI("Mission event: completed — " << mission_name);
-        } else {
-            int fault = self->mission_fault_.load();
-            if (fault != (int)MissionFault::NONE) {
-                // Faulted (GPS/stuck/wheel) — send dedicated event so the UI can keep
-                // the fault banner visible rather than clearing it silently
-                static const char* faultNames[] = {"", "gps_lost", "stuck", "wheel_fail"};
-                ev["event"] = "mission_faulted";
-                ev["fault"] = faultNames[std::clamp(fault, 0, 3)];
-                LOGI("Mission event: faulted (" << ev["fault"] << ") — " << mission_name);
-            }
-            // If fault==NONE the mission was aborted by command; server.js already
-            // broadcast that event from the /api/missions/abort endpoint, so no
-            // duplicate event is sent here.
-        }
-
-        if (ev.contains("event"))
-            self->sendWebEvent(ev.dump());
-    }
-
-    LOGI("Mission executor finished");
-}
 
 // ── SLAM Bridge client ────────────────────────────────────────────────────────
 
 bool Comms::startSlamBridge(const std::string& host, int port) {
-    if (slam_run_.exchange(true)) return false;  // already running
-
-    // RX thread: connects to slam_bridge.py, reads newline-delimited JSON
-    slam_rxThread_ = std::thread([this, host, port]() {
-        while (slam_run_.load()) {
-            int s = openTcpSocket(host, port);
-            if (s < 0) {
-                LOGW("SLAM bridge not reachable on " << host << ":" << port << " — retrying in 2s");
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-                continue;
-            }
-            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); slam_sock_ = s; }
-            LOGI("SLAM bridge connected on " << host << ":" << port);
-
-            std::string buf;
-            char tmp[4096];
-            while (slam_run_.load()) {
-                ssize_t n = ::recv(s, tmp, sizeof(tmp)-1, 0);
-                if (n < 0) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) continue; // recv timeout — no data yet
-                    break;  // real error
-                }
-                if (n == 0) break;  // clean close by bridge
-                tmp[n] = '\0';
-                buf += tmp;
-                size_t pos;
-                while ((pos = buf.find('\n')) != std::string::npos) {
-                    std::string line = buf.substr(0, pos);
-                    buf.erase(0, pos + 1);
-                    if (!line.empty()) {
-                        try { updateFromBridge(line); }
-                        catch(...) { LOGW("SLAM bridge: bad JSON: " << line.substr(0,80)); }
-                    }
-                }
-            }
-
-            ::close(s);
-            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); slam_sock_ = -1; }
-            // clear stale obstacle on disconnect
-            obstacle_.store(false);
-            lidar_fwd_dist_.store(-1.0f);
-            if (slam_run_.load())
-                LOGW("SLAM bridge disconnected — retrying in 2s");
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-    });
-
-    // TX thread: sends encoder data every 100ms when fresh
-    slam_txThread_ = std::thread([this]() {
-        while (slam_run_.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            int sock;
-            { std::lock_guard<std::mutex> lk(slam_sock_mtx_); sock = slam_sock_; }
-            if (sock < 0) continue;
-            int left, right; double age_ms;
-            if (!getLatestEncoders(left, right, age_ms) || age_ms > 200.0) continue;
-            nlohmann::json j;
-            j["type"]   = "odom_data";
-            j["left"]   = left;
-            j["right"]  = right;
-            j["age_ms"] = age_ms;
-            std::string line = j.dump() + "\n";
-            ::send(sock, line.c_str(), line.size(), MSG_NOSIGNAL);
-        }
-    });
-
-    return true;
+    return slam_link_.start(host, port, sensors_,
+        [this](const std::string& line) { updateFromBridge(line); });
 }
 
 void Comms::stopSlamBridge() {
-    slam_run_.store(false);
-    // Unblock RX thread if stuck in recv
-    { std::lock_guard<std::mutex> lk(slam_sock_mtx_);
-      if (slam_sock_ >= 0) { ::shutdown(slam_sock_, SHUT_RDWR); } }
-    if (slam_rxThread_.joinable()) slam_rxThread_.join();
-    if (slam_txThread_.joinable()) slam_txThread_.join();
-    { std::lock_guard<std::mutex> lk(slam_sock_mtx_);
-      if (slam_sock_ >= 0) { ::close(slam_sock_); slam_sock_ = -1; } }
+    slam_link_.stop();
+    // Clear stale obstacle data
+    sensors_.setLidar(false, -1.0f, {});
+}
+
+bool Comms::sendSlamBridge(const std::string& json_str) {
+    return slam_link_.sendLine(json_str);
 }
 
 // ── Stereo depth camera ───────────────────────────────────────────────────────
 
-void Comms::startStereoDepth(int device_index, bool share_left) {
+void Comms::startStereoDepth(const std::string& device, bool share_left) {
     if (stereo_depth_.running()) {
         LOGI("StereoDepth already running");
         return;
     }
-    LOGI("Starting stereo depth camera on device " << device_index
+    stereo_device_ = device;
+    LOGI("Starting stereo depth camera on " << device
          << (share_left ? " (sharing left frame for detection fallback)" : ""));
-    stereo_depth_.start(device_index,
-                        "/home/james/stereo_calib/stereo_params_cuda.xml",
-                        5558, share_left);
+    stereo_depth_.start(device, cfg_, share_left);
 }
 
 bool Comms::getStereoLeftFrame(cv::Mat& out) {
@@ -1404,50 +614,35 @@ void Comms::updateFromBridge(const std::string& line) {
     const std::string type = j.at("type").get<std::string>();
 
     if (type == "scan_full") {
-        obstacle_.store(j.at("obs").get<bool>());
+        bool obs = j.at("obs").get<bool>();
         float fwd = j.at("fwd").get<float>();
-        lidar_fwd_dist_.store(fwd);
-        lidar_stamp_ns_.store(now_ns());
 
         std::vector<std::pair<float,float>> pts;
         for (auto& p : j.at("pts"))
             pts.push_back({p[0].get<float>(), p[1].get<float>()});
-        { std::lock_guard<std::mutex> lk(scan_mtx_); latest_scan_ = std::move(pts); }
+        sensors_.setLidar(obs, fwd, std::move(pts));
         broadcastScan();
 
     } else if (type == "slam_pose") {
-        std::lock_guard<std::mutex> lk(slam_pose_mtx_);
-        slam_pose_ = {j.at("x").get<float>(), j.at("y").get<float>(),
-                      j.at("theta").get<float>(), true};
+        sensors_.setSlamPose(j.at("x").get<float>(), j.at("y").get<float>(),
+                             j.at("theta").get<float>());
     } else if (type == "slam_map") {
         sendWebEvent(line);  // forward PNG to web client unchanged
+
+    } else if (type == "planned_path") {
+        if (nav2_planner_) nav2_planner_->onPlanResponse(j);
     }
 }
 
-Comms::SlamPose Comms::getSlamPose() const {
-    std::lock_guard<std::mutex> lk(slam_pose_mtx_);
-    return slam_pose_;
-}
-
-float Comms::getLatestLidarFwdDist(double* age_ms) const {
-    float d = lidar_fwd_dist_.load();
-    if (d < 0.0f) return -1.0f;
-    int64_t stamp = lidar_stamp_ns_.load();
-    if (stamp == 0) return -1.0f;
-    if (age_ms) *age_ms = (now_ns() - stamp) / 1e6;
-    return d;
-}
-
 void Comms::broadcastScan() {
-    std::vector<std::pair<float,float>> pts;
-    { std::lock_guard<std::mutex> lk(scan_mtx_); pts = latest_scan_; }
+    auto pts = sensors_.getLatestScan();
     if (pts.empty()) return;
 
     // Compact JSON: {"type":"scan","obs":bool,"fwd":float,"pts":[[angle,dist],...]}
     std::string j = "{\"type\":\"scan\",\"obs\":";
-    j += obstacle_.load() ? "true" : "false";
+    j += sensors_.hasObstacle() ? "true" : "false";
     char fbuf[32];
-    snprintf(fbuf, sizeof(fbuf), ",\"fwd\":%.2f", lidar_fwd_dist_.load());
+    snprintf(fbuf, sizeof(fbuf), ",\"fwd\":%.2f", sensors_.getLatestLidarFwdDist());
     j += fbuf;
     j += ",\"pts\":[";
     for (size_t i = 0; i < pts.size(); ++i) {

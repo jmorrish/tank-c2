@@ -5,6 +5,8 @@
 #include <mutex>
 #include <opencv2/opencv.hpp>
 
+struct RuntimeConfig;  // fwd
+
 // Runs the CUDA stereo depth pipeline in a background thread.
 // Opens the stereo camera independently (2560x720 side-by-side MJPEG),
 // rectifies with precomputed calibration maps, computes disparity via
@@ -17,14 +19,11 @@ public:
     StereoDepth()  = default;
     ~StereoDepth() { stop(); }
 
-    // device_index — V4L2 index of the stereo camera
-    // calib_xml    — path to stereo_params_cuda.xml
-    // zmq_port     — ZMQ PUB port (default 5558, mjpeg_bridge subscribes here)
-    // share_left   — if true, publish left half-frame for detection fallback
-    void start(int                device_index = 2,
-               const std::string& calib_xml    = "/home/james/stereo_calib/stereo_params_cuda.xml",
-               int                zmq_port     = 5558,
-               bool               share_left   = false);
+    // device — V4L2 device path (e.g. "/dev/video-stereo") or index as
+    //          string (e.g. "2").  Path-based open is preferred (udev symlinks).
+    // cfg    — runtime config for tunable parameters
+    // share_left — if true, publish left half-frame for detection fallback
+    void start(const std::string& device, const RuntimeConfig& cfg, bool share_left = false);
     void stop();
 
     bool running() const { return run_.load(); }
@@ -35,7 +34,7 @@ public:
     bool getLatestLeft(cv::Mat& out);
 
 private:
-    void loop(int device_index, std::string calib_xml, int zmq_port, bool share_left);
+    void loop(std::string device, const RuntimeConfig* cfg, bool share_left);
 
     std::thread       thread_;
     std::atomic<bool> run_{false};

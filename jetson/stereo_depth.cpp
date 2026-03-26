@@ -1,4 +1,5 @@
 #include "stereo_depth.h"
+#include "runtime_config.h"
 #include "helpers.h"
 
 #include <opencv2/opencv.hpp>
@@ -16,11 +17,11 @@ using namespace cv;
 
 // ── public ────────────────────────────────────────────────────────────────────
 
-void StereoDepth::start(int device_index, const std::string& calib_xml, int zmq_port, bool share_left) {
+void StereoDepth::start(const std::string& device, const RuntimeConfig& cfg, bool share_left) {
     if (run_.load()) return;
     if (thread_.joinable()) thread_.join();  // reap any previous (failed) thread
     run_.store(true);
-    thread_ = std::thread(&StereoDepth::loop, this, device_index, calib_xml, zmq_port, share_left);
+    thread_ = std::thread(&StereoDepth::loop, this, device, &cfg, share_left);
 }
 
 bool StereoDepth::getLatestLeft(cv::Mat& out) {
@@ -38,7 +39,7 @@ void StereoDepth::stop() {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bool share_left) {
+void StereoDepth::loop(std::string device, const RuntimeConfig* cfg, bool share_left) {
   try {
     // Kill any leftover stereo_depth_zmq subprocess that may own the ZMQ port
     ::system("pkill -f stereo_depth_zmq 2>/dev/null; sleep 0.2");
@@ -48,8 +49,8 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
     zmq::socket_t  pub(ctx, ZMQ_PUB);
     pub.set(zmq::sockopt::sndhwm, 1);
     try {
-        pub.bind("tcp://*:" + std::to_string(zmq_port));
-        LOGI("StereoDepth: ZMQ PUB bound on port " << zmq_port);
+        pub.bind("tcp://*:" + std::to_string(cfg->zmq_disparity_port));
+        LOGI("StereoDepth: ZMQ PUB bound on port " << cfg->zmq_disparity_port);
     } catch (const zmq::error_t& e) {
         LOGE("StereoDepth: ZMQ bind failed: " << e.what());
         run_.store(false);
@@ -60,16 +61,16 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
     zmq::socket_t stereo_pub(ctx, ZMQ_PUB);
     stereo_pub.set(zmq::sockopt::sndhwm, 2);  // drop old frames if bridge is slow
     try {
-        stereo_pub.bind("tcp://*:5557");
-        LOGI("StereoDepth: ZMQ stereo PUB bound on port 5557");
+        stereo_pub.bind("tcp://*:" + std::to_string(cfg->zmq_stereo_port));
+        LOGI("StereoDepth: ZMQ stereo PUB bound on port " << cfg->zmq_stereo_port);
     } catch (const zmq::error_t& e) {
         LOGW("StereoDepth: ZMQ stereo bind failed: " << e.what() << " (RTAB-Map bridge unavailable)");
     }
 
     // ── Calibration ──────────────────────────────────────────────────────────
-    FileStorage fs(calib_xml, FileStorage::READ);
+    FileStorage fs(cfg->stereo_calib_xml, FileStorage::READ);
     if (!fs.isOpened()) {
-        LOGE("StereoDepth: cannot open calibration file: " << calib_xml);
+        LOGE("StereoDepth: cannot open calibration file: " << cfg->stereo_calib_xml);
         run_.store(false);
         return;
     }
@@ -100,9 +101,9 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
     LOGI("StereoDepth: calibration loaded — f=" << f << " B=" << B);
 
     // ── CUDA StereoBM ────────────────────────────────────────────────────────
-    const int numDisparities = 128;
-    const int blockSize      = 9;
-    const int blurKSize      = 3;
+    const int numDisparities = cfg->stereo_num_disparities;
+    const int blockSize      = cfg->stereo_block_size;
+    const int blurKSize      = cfg->stereo_blur_ksize;
     auto stereo = cuda::createStereoBM(numDisparities, blockSize);
 
     // ── Histogram setup ──────────────────────────────────────────────────────
@@ -111,24 +112,28 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
 
     // ── Camera open ──────────────────────────────────────────────────────────
     // Opens its own VideoCapture — independent from the detection camera.
+    // device is either a path ("/dev/video-stereo") or an integer index ("2").
     VideoCapture cap;
     auto openStereoCamera = [&]() -> bool {
         while (run_.load()) {
             cap.release();
-            cap.open(device_index, CAP_V4L2);
+            if (!device.empty() && device[0] == '/')
+                cap.open(device, CAP_V4L2);          // udev symlink path
+            else
+                cap.open(std::stoi(device), CAP_V4L2); // integer index
             cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
             cap.set(CAP_PROP_FRAME_WIDTH,  2560);
             cap.set(CAP_PROP_FRAME_HEIGHT,  720);
             cap.set(CAP_PROP_FPS, 30);
             cap.set(CAP_PROP_BUFFERSIZE, 4);
             if (cap.isOpened()) {
-                LOGI("StereoDepth: stereo camera opened on device " << device_index
+                LOGI("StereoDepth: stereo camera opened on " << device
                      << " at " << cap.get(CAP_PROP_FRAME_WIDTH) << "x"
                      << cap.get(CAP_PROP_FRAME_HEIGHT)
                      << " @ " << cap.get(CAP_PROP_FPS) << "fps");
                 return true;
             }
-            LOGW("StereoDepth: camera device " << device_index << " not available — retrying in 3s");
+            LOGW("StereoDepth: camera " << device << " not available — retrying in 3s");
             for (int i = 0; i < 30 && run_.load(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -141,10 +146,10 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
     // STEREO_MAX_FPS: rate for CUDA StereoBM + disparity publish (GPU work).
     // STEREO_LEFT_FPS: rate for left-frame sharing when in fallback mode.
     // Both are 10fps; they fire together so we only decode the MJPEG frame once.
-    constexpr float STEREO_MAX_FPS        = 10.0f;
-    constexpr int   STEREO_INTERVAL_MS    = static_cast<int>(1000.0f / STEREO_MAX_FPS);
-    constexpr float STEREO_LEFT_FPS       = 10.0f;
-    constexpr int   STEREO_LEFT_INT_MS    = static_cast<int>(1000.0f / STEREO_LEFT_FPS);
+    const float STEREO_MAX_FPS        = cfg->stereo_max_fps;
+    const int   STEREO_INTERVAL_MS    = static_cast<int>(1000.0f / STEREO_MAX_FPS);
+    const float STEREO_LEFT_FPS       = cfg->stereo_left_fps;
+    const int   STEREO_LEFT_INT_MS    = static_cast<int>(1000.0f / STEREO_LEFT_FPS);
     auto stereo_last_proc = std::chrono::steady_clock::now()
                             - std::chrono::milliseconds(STEREO_INTERVAL_MS);
     auto left_last_t      = std::chrono::steady_clock::now()
@@ -283,7 +288,7 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bo
         resize(disp_vis, disp_small, Size(), 0.5, 0.5, INTER_LINEAR);
 
         std::vector<uchar> buf;
-        std::vector<int> enc_params = {IMWRITE_JPEG_QUALITY, 60};
+        std::vector<int> enc_params = {IMWRITE_JPEG_QUALITY, cfg->stereo_jpeg_quality};
         imencode(".jpg", disp_small, buf, enc_params);
         zmq::message_t msg(buf.size());
         std::memcpy(msg.data(), buf.data(), buf.size());
