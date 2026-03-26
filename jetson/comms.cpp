@@ -1377,13 +1377,20 @@ void Comms::stopSlamBridge() {
 
 // ── Stereo depth camera ───────────────────────────────────────────────────────
 
-void Comms::startStereoDepth(int device_index) {
+void Comms::startStereoDepth(int device_index, bool share_left) {
     if (stereo_depth_.running()) {
         LOGI("StereoDepth already running");
         return;
     }
-    LOGI("Starting stereo depth camera on device " << device_index);
-    stereo_depth_.start(device_index);
+    LOGI("Starting stereo depth camera on device " << device_index
+         << (share_left ? " (sharing left frame for detection fallback)" : ""));
+    stereo_depth_.start(device_index,
+                        "/home/james/stereo_calib/stereo_params_cuda.xml",
+                        5558, share_left);
+}
+
+bool Comms::getStereoLeftFrame(cv::Mat& out) {
+    return stereo_depth_.getLatestLeft(out);
 }
 
 void Comms::stopStereoDepth() {

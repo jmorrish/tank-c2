@@ -96,8 +96,14 @@ public:
     SlamPose getSlamPose() const;
 
     // Stereo depth camera (integrated — runs its own VideoCapture independently)
-    void startStereoDepth(int device_index = 2);
+    // share_left=true: also publish left half-frames for detection fallback
+    void startStereoDepth(int device_index = 2, bool share_left = false);
     void stopStereoDepth();
+
+    // Get the latest left half-frame from StereoDepth (only available when
+    // startStereoDepth was called with share_left=true). Returns false if no
+    // new frame since last call.
+    bool getStereoLeftFrame(cv::Mat& out);
 
 private:
     // Control TCP

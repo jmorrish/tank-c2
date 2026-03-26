@@ -403,6 +403,12 @@ void ObjectDetection::mainLoop(){
     };
 
     auto openCam = [&]() -> bool {
+        // Stereo-fallback mode: no local camera, frames come from StereoDepth.
+        if (cam1_index_ < 0) {
+            LOGI("cam1: stereo-fallback mode — using left frame from stereo camera");
+            return true;
+        }
+
         while (run_.load()) {
             // 1. Fast path: try the last-known detection camera index.
             if (cam1_index_ >= 0 && cam1_index_ != stereo_cam_index_ && tryOpen(cam1_index_))
@@ -444,20 +450,31 @@ void ObjectDetection::mainLoop(){
 
     while (run_.load()){
         cv::Mat raw_frame;
-        cap >> raw_frame;
-        if (raw_frame.empty()){
-            ++emptyCount;
-            if (emptyCount >= MAX_EMPTY){
-                LOGW("cam1: camera lost (unplugged?) — waiting for reconnect...");
-                TargetMsg empty{}; empty.valid = false;
-                bus_.set(empty);
-                if (comms_) comms_->setDetectionFPS(0.0f);
-                if (!openCam()) return;
-                emptyCount = 0;
+
+        if (cam1_index_ < 0) {
+            // Stereo-fallback: wait for a new left half-frame from StereoDepth.
+            while (run_.load()) {
+                if (comms_ && comms_->getStereoLeftFrame(raw_frame)) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-            continue;
+            if (!run_.load()) break;
+            if (raw_frame.empty()) continue;
+        } else {
+            cap >> raw_frame;
+            if (raw_frame.empty()){
+                ++emptyCount;
+                if (emptyCount >= MAX_EMPTY){
+                    LOGW("cam1: camera lost (unplugged?) — waiting for reconnect...");
+                    TargetMsg empty{}; empty.valid = false;
+                    bus_.set(empty);
+                    if (comms_) comms_->setDetectionFPS(0.0f);
+                    if (!openCam()) return;
+                    emptyCount = 0;
+                }
+                continue;
+            }
+            emptyCount = 0;
         }
-        emptyCount = 0;
 
         cv::Mat frame = raw_frame;
 

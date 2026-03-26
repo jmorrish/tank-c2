@@ -16,11 +16,19 @@ using namespace cv;
 
 // ── public ────────────────────────────────────────────────────────────────────
 
-void StereoDepth::start(int device_index, const std::string& calib_xml, int zmq_port) {
+void StereoDepth::start(int device_index, const std::string& calib_xml, int zmq_port, bool share_left) {
     if (run_.load()) return;
     if (thread_.joinable()) thread_.join();  // reap any previous (failed) thread
     run_.store(true);
-    thread_ = std::thread(&StereoDepth::loop, this, device_index, calib_xml, zmq_port);
+    thread_ = std::thread(&StereoDepth::loop, this, device_index, calib_xml, zmq_port, share_left);
+}
+
+bool StereoDepth::getLatestLeft(cv::Mat& out) {
+    std::lock_guard<std::mutex> lk(left_mtx_);
+    if (!left_new_) return false;
+    latest_left_.copyTo(out);
+    left_new_ = false;
+    return true;
 }
 
 void StereoDepth::stop() {
@@ -30,7 +38,7 @@ void StereoDepth::stop() {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
+void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port, bool share_left) {
   try {
     // Kill any leftover stereo_depth_zmq subprocess that may own the ZMQ port
     ::system("pkill -f stereo_depth_zmq 2>/dev/null; sleep 0.2");
@@ -112,7 +120,7 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
             cap.set(CAP_PROP_FRAME_WIDTH,  2560);
             cap.set(CAP_PROP_FRAME_HEIGHT,  720);
             cap.set(CAP_PROP_FPS, 30);
-            cap.set(CAP_PROP_BUFFERSIZE, 1);
+            cap.set(CAP_PROP_BUFFERSIZE, 4);
             if (cap.isOpened()) {
                 LOGI("StereoDepth: stereo camera opened on device " << device_index
                      << " at " << cap.get(CAP_PROP_FRAME_WIDTH) << "x"
@@ -130,13 +138,17 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
     if (!openStereoCamera()) return;
 
     // ── Main loop ────────────────────────────────────────────────────────────
-    // Process at most STEREO_MAX_FPS to avoid GPU contention with TensorRT YOLO.
-    // All camera frames are read (draining the V4L2 buffer) but CUDA work is skipped
-    // on frames that arrive faster than the target interval.
-    constexpr float STEREO_MAX_FPS        = 5.0f;
+    // STEREO_MAX_FPS: rate for CUDA StereoBM + disparity publish (GPU work).
+    // STEREO_LEFT_FPS: rate for left-frame sharing when in fallback mode.
+    // Both are 10fps; they fire together so we only decode the MJPEG frame once.
+    constexpr float STEREO_MAX_FPS        = 10.0f;
     constexpr int   STEREO_INTERVAL_MS    = static_cast<int>(1000.0f / STEREO_MAX_FPS);
+    constexpr float STEREO_LEFT_FPS       = 10.0f;
+    constexpr int   STEREO_LEFT_INT_MS    = static_cast<int>(1000.0f / STEREO_LEFT_FPS);
     auto stereo_last_proc = std::chrono::steady_clock::now()
                             - std::chrono::milliseconds(STEREO_INTERVAL_MS);
+    auto left_last_t      = std::chrono::steady_clock::now()
+                            - std::chrono::milliseconds(STEREO_LEFT_INT_MS);
 
     int dbg_frame  = 0;
     int emptyCount = 0;
@@ -157,10 +169,14 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
         emptyCount = 0;
 
         auto now_t = std::chrono::steady_clock::now();
-        int elapsed_ms = static_cast<int>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(now_t - stereo_last_proc).count());
-        if (elapsed_ms < STEREO_INTERVAL_MS) continue;  // skip — no decode at all
-        stereo_last_proc = now_t;
+        auto dur_ms = [](auto a, auto b){ return (int)std::chrono::duration_cast<std::chrono::milliseconds>(b-a).count(); };
+        bool do_stereo = (dur_ms(stereo_last_proc, now_t) >= STEREO_INTERVAL_MS);
+        bool do_left   = share_left && (dur_ms(left_last_t, now_t) >= STEREO_LEFT_INT_MS);
+        if (!do_stereo && !do_left) continue;  // skip — no decode needed
+
+        // Update timestamps BEFORE expensive work so we don't drift under load
+        if (do_stereo) stereo_last_proc = now_t;
+        if (do_left)   left_last_t      = now_t;
 
         Mat frame;
         if (!cap.retrieve(frame) || frame.empty()) continue;  // decode only now
@@ -175,6 +191,15 @@ void StereoDepth::loop(int device_index, std::string calib_xml, int zmq_port) {
         int w2    = frame.cols / 2;
         Mat left  = frame(Rect(0,  0, w2, frame.rows));
         Mat right = frame(Rect(w2, 0, w2, frame.rows));
+
+        // Share left half for ObjectDetection fallback (stereo-only mode).
+        if (do_left) {
+            std::lock_guard<std::mutex> lk(left_mtx_);
+            left.copyTo(latest_left_);
+            left_new_ = true;
+        }
+
+        if (!do_stereo) continue;  // left-only decode done — skip CUDA work
 
         // Convert to greyscale and upload to GPU
         Mat grayL, grayR;

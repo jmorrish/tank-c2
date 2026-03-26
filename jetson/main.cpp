@@ -135,11 +135,15 @@ int main(int argc, char** argv){
     // SLAM bridge — connects to slam_bridge.py:9997 in background (non-fatal)
     comms.startSlamBridge();
 
-    // Stereo depth — opens its own camera independently (skipped if none found)
-    if (cam_stereo >= 0)
-        comms.startStereoDepth(cam_stereo);
-    else
+    // Stereo depth — opens its own camera independently (skipped if none found).
+    // share_left=true when no separate detection camera: ObjectDetection will
+    // use the left half-frame from StereoDepth instead of its own camera.
+    if (cam_stereo >= 0) {
+        bool share_left = (cam_detect < 0);
+        comms.startStereoDepth(cam_stereo, share_left);
+    } else {
         LOGI("Stereo depth not started (no stereo camera detected)");
+    }
 
     // Shared bus: detection -> movement
     AtomicLatest<TargetMsg> bus;
