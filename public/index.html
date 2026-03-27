@@ -299,6 +299,14 @@ button,a,[role=button]{touch-action:manipulation}
       <div class="card-row" style="margin-top:4px"><span class="card-label" style="font-size:10px">Age</span><span class="tv" id="dA" style="font-size:10px">—</span></div>
       <div class="card-row" style="margin-top:6px"><span class="card-label">Det. FPS</span><span class="tv" id="detFps">—</span></div>
     </div>
+    <div class="card" id="sysCard">
+      <div class="card-title">▸ SYSTEM</div>
+      <div class="card-row"><span class="card-label">CPU</span><span class="tv" id="sysCpu">—</span></div>
+      <div class="card-row"><span class="card-label">GPU</span><span class="tv" id="sysGpu">—</span></div>
+      <div class="card-row"><span class="card-label">CPU Temp</span><span class="tv" id="sysCpuT">—</span></div>
+      <div class="card-row"><span class="card-label">GPU Temp</span><span class="tv" id="sysGpuT">—</span></div>
+      <div class="card-row"><span class="card-label">RAM</span><span class="tv" id="sysRam">—</span></div>
+    </div>
     <div class="card" id="lidarCard">
       <div class="card-title">▸ LIDAR</div>
       <canvas id="radarCanvas" width="180" height="180" style="display:block;margin:auto"></canvas>
@@ -358,59 +366,45 @@ button,a,[role=button]{touch-action:manipulation}
     </div>
   </div>
 
-  <!-- Depth stream -->
-  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000;min-height:180px">
-    <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">▸ DEPTH</div>
-    <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:6px">
-      <button id="depthBtn" onclick="toggleDepth()"
-        style="font-size:9px;letter-spacing:1px;padding:2px 8px;border-radius:3px;border:1px solid var(--border);background:rgba(0,176,255,.1);color:var(--blue);cursor:pointer;font-family:inherit">START</button>
-      <span id="depthStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">OFF</span>
-    </div>
-    <img id="depthImg" alt="Depth feed" style="width:100%;display:none;max-height:280px;object-fit:contain"
-      onerror="depthErr()" onload="depthOk()">
-    <div id="depthPlaceholder" style="width:100%;height:180px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:#050810">
-      <div style="font-size:11px;letter-spacing:2px;color:#333">DEPTH CAMERA OFF</div>
-      <div style="font-size:10px;color:#222">Press START to activate</div>
-    </div>
-  </div>
-
-  <!-- Video stream -->
-  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000;min-height:240px">
-    <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">▸ LIVE FEED</div>
-    <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
-      <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
-        Q <input id="sqSlider" type="range" min="10" max="95" value="55" step="5"
-            style="width:70px;accent-color:var(--accent);cursor:pointer"
-            oninput="onSQSlider(this.value)">
-        <span id="sqVal">55</span>
-      </label>
-      <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING…</span>
-    </div>
-
-    <!-- Live stream img (src set by JS — MJPEG for Chrome/Android, snapshot polling for Safari/iOS) -->
-    <img id="streamImg"
-      alt="Camera feed"
-      style="width:100%;display:block;max-height:360px;object-fit:contain"
-      onerror="streamErr()"
-      onload="streamOk()">
-
-    <!-- Offline placeholder (shown when stream unavailable) -->
-    <div id="streamPlaceholder" style="display:none;width:100%;height:240px;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:repeating-linear-gradient(45deg,#0a0e1a 0px,#0a0e1a 10px,#0d1220 10px,#0d1220 20px)" aria-hidden="true">
-      <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <!-- Camera body -->
-        <rect x="8" y="22" width="52" height="36" rx="4" stroke="#1f2937" stroke-width="2.5" fill="#111827"/>
-        <!-- Lens -->
-        <circle cx="34" cy="40" r="12" stroke="#1f2937" stroke-width="2.5" fill="#0a0e1a"/>
-        <circle cx="34" cy="40" r="6" stroke="#1f2937" stroke-width="2" fill="#0d1220"/>
-        <!-- Viewfinder bump -->
-        <rect x="60" y="30" width="12" height="10" rx="2" stroke="#1f2937" stroke-width="2" fill="#111827"/>
-        <!-- Cross through it -->
-        <line x1="16" y1="16" x2="64" y2="64" stroke="#ff1744" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="64" y1="16" x2="16" y2="64" stroke="#ff1744" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
-      <div style="text-align:center">
-        <div style="font-size:12px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:4px">CAMERA FEED UNAVAILABLE</div>
+  <!-- Video streams — unified panel -->
+  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000">
+    <div style="display:flex;flex-wrap:wrap;gap:0">
+      <!-- Main feed (YOLO + FLIR side-by-side) -->
+      <div style="flex:2;min-width:300px;position:relative">
+        <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">DETECTION + THERMAL</div>
+        <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
+          <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
+            Q <input id="sqSlider" type="range" min="10" max="95" value="55" step="5"
+                style="width:60px;accent-color:var(--accent);cursor:pointer"
+                oninput="onSQSlider(this.value)">
+            <span id="sqVal">55</span>
+          </label>
+          <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING</span>
+        </div>
+        <img id="streamImg" alt="Camera feed" style="width:100%;display:block;object-fit:contain"
+          onerror="streamErr()" onload="streamOk()">
+        <div id="streamPlaceholder" style="display:none;width:100%;height:200px;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#050810">
+          <div style="font-size:11px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>
+          <div style="font-size:10px;color:var(--muted)">CAMERA FEED UNAVAILABLE</div>
+        </div>
+      </div>
+      <!-- Depth feed -->
+      <div style="flex:1;min-width:200px;position:relative;border-left:1px solid var(--border)">
+        <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">DEPTH</div>
+        <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
+          <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
+            Q <input id="dqSlider" type="range" min="10" max="95" value="60" step="5"
+                style="width:60px;accent-color:var(--blue);cursor:pointer"
+                oninput="onDQSlider(this.value)">
+            <span id="dqVal">60</span>
+          </label>
+          <span id="depthStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">STARTING</span>
+        </div>
+        <img id="depthImg" alt="Depth feed" style="width:100%;display:none;object-fit:contain"
+          onerror="depthErr()" onload="depthOk()">
+        <div id="depthPlaceholder" style="width:100%;height:200px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:#050810">
+          <div style="font-size:11px;letter-spacing:2px;color:#333">STARTING DEPTH</div>
+        </div>
       </div>
     </div>
   </div>
@@ -748,7 +742,7 @@ const setStale=(id,stale)=>{const c=cardOf(id);if(c)c.classList.toggle('stale',s
 function updateTele(d){
   if(!d){
     // Jetson disconnected — reset all displayed values to dashes
-    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps','slamPose'].forEach(id=>sv2(id,'—'));
+    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps','slamPose','sysCpu','sysGpu','sysCpuT','sysGpuT','sysRam'].forEach(id=>sv2(id,'—'));
     ['iY','gLa','eL','dV'].forEach(id=>setStale(id,false));
     return;
   }
@@ -761,6 +755,15 @@ function updateTele(d){
     lastSlamPose = d.slam_pose;
     sv2('slamPose',`x:${f(d.slam_pose.x,1)} y:${f(d.slam_pose.y,1)} ${f(d.slam_pose.theta*180/Math.PI,0)}°`);
   } else sv2('slamPose','—');
+  // System monitor (from generic sensor slots)
+  if(d.sensors){
+    const s=d.sensors;
+    if(s.cpu_usage_pct)sv2('sysCpu',f(s.cpu_usage_pct.value,1,'%'));
+    if(s.gpu_usage_pct)sv2('sysGpu',f(s.gpu_usage_pct.value,1,'%'));
+    if(s.cpu_temp_c){sv2('sysCpuT',f(s.cpu_temp_c.value,1,'°C'));setStale('sysCpuT',s.cpu_temp_c.value>90)}
+    if(s.gpu_temp_c){sv2('sysGpuT',f(s.gpu_temp_c.value,1,'°C'));setStale('sysGpuT',s.gpu_temp_c.value>90)}
+    if(s.ram_used_mb&&s.ram_total_mb)sv2('sysRam',`${f(s.ram_used_mb.value/1024,1)} / ${f(s.ram_total_mb.value/1024,1)} GB`);
+  }
   if(d.stream_quality!=null&&!sqDebounce){const sl=document.getElementById('sqSlider');if(sl){sl.value=d.stream_quality;document.getElementById('sqVal').textContent=d.stream_quality;}}
   if(d.target_person_id!=null) highlightTarget(d.target_person_id);
   // Mode + mission progress from Jetson telemetry
@@ -1420,31 +1423,15 @@ function scheduleStreamRetry(delay) {
   streamRetryTimer = setTimeout(() => startStream(), delay);
 }
 
-// ── Depth stream ──────────────────────────────────────────────────────────────
-let depthRunning = false, depthOnline = false, depthSnapshotTimer = null, depthRetryTimer = null;
+// ── Depth stream (auto-start) ─────────────────────────────────────────────────
+let depthRunning = true, depthOnline = false, depthSnapshotTimer = null, depthRetryTimer = null;
 
-function toggleDepth() {
-  if (depthRunning) {
-    depthRunning = false;
-    sendCmd('stereo_stop');
-    clearTimeout(depthSnapshotTimer); clearTimeout(depthRetryTimer);
-    const img = document.getElementById('depthImg');
-    img.src = ''; img.style.display = 'none';
-    document.getElementById('depthPlaceholder').style.display = 'flex';
-    document.getElementById('depthPlaceholder').innerHTML =
-      '<div style="font-size:11px;letter-spacing:2px;color:#333">DEPTH CAMERA OFF</div><div style="font-size:10px;color:#222">Press START to activate</div>';
-    document.getElementById('depthBtn').textContent = 'START';
-    document.getElementById('depthStatus').textContent = 'OFF';
-    document.getElementById('depthStatus').style.color = 'var(--muted)';
-  } else {
-    depthRunning = true;
-    sendCmd('stereo_start');
-    document.getElementById('depthBtn').textContent = 'STOP';
-    document.getElementById('depthStatus').textContent = 'STARTING…';
-    document.getElementById('depthStatus').style.color = 'var(--warn)';
-    // Give the process 3s to start then begin streaming
-    setTimeout(startDepthStream, 3000);
-  }
+// Depth quality slider
+let dqDebounce = null;
+function onDQSlider(v) {
+  document.getElementById('dqVal').textContent = v;
+  clearTimeout(dqDebounce);
+  dqDebounce = setTimeout(() => sendCmd('depth_quality:' + v), 300);
 }
 
 function startDepthStream() {
@@ -1521,6 +1508,9 @@ initMap();
 initStaleWatchdog();
 connectWS();
 startStream();
+// Auto-start depth stream
+sendCmd('stereo_start');
+setTimeout(startDepthStream, 3000);
 </script>
 </body>
 </html>

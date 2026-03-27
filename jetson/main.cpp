@@ -17,6 +17,7 @@ static void sig_handler(int) { g_running.store(false); }
 #include "mission_behavior.h"
 #include "nav2_planner.h"
 #include "runtime_config.h"
+#include "system_monitor.h"
 #include "config.h"  // DEFAULT_HEADLESS only
 
 // Check for stable udev symlinks first, then fall back to index probing.
@@ -89,13 +90,19 @@ int main(int argc, char** argv){
                   << " [--auto-continue]"
                   << " [--ptu-ip <ip:port>]  [--ip <ip>] [--port <n>]"
                   << " [--sensor-ip <ip:port>]"
-                  << " [--detect-cam <dev>] [--stereo-cam <dev>]\n";
+                  << " [--detect-cam <dev>] [--stereo-cam <dev>]"
+                  << " [--config <path>]\n";
         return 1;
     }
     std::string engine_path = argv[1];
 
+    // Pre-scan for --config before full arg parsing (config informs defaults)
+    std::string config_path = "config.json";
+    for (int i = 2; i < argc; ++i)
+        if (std::string(argv[i]) == "--config" && i + 1 < argc) { config_path = argv[++i]; break; }
+
     // Load runtime config first so CLI defaults come from config.json
-    RuntimeConfig cfg = RuntimeConfig::load("config.json");
+    RuntimeConfig cfg = RuntimeConfig::load(config_path);
 
     bool headless      = DEFAULT_HEADLESS;
     bool auto_continue = false;
@@ -209,6 +216,10 @@ int main(int argc, char** argv){
         return 1;
     }
 
+    // System monitor — pushes CPU/GPU temp, usage, RAM into generic sensor slots
+    SystemMonitor sysmon(comms.sensors());
+    sysmon.start();
+
     LOGI("All subsystems running. Press Ctrl+C to exit.");
 
     std::signal(SIGINT,  sig_handler);
@@ -218,6 +229,7 @@ int main(int argc, char** argv){
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     LOGI("Shutting down...");
+    sysmon.stop();
     coordinator.stop();
     det.stop();
     comms.stopWebIPC();

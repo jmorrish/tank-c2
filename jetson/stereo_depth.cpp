@@ -20,6 +20,7 @@ using namespace cv;
 void StereoDepth::start(const std::string& device, const RuntimeConfig& cfg, bool share_left) {
     if (run_.load()) return;
     if (thread_.joinable()) thread_.join();  // reap any previous (failed) thread
+    jpeg_quality_.store(cfg.stereo_jpeg_quality);
     run_.store(true);
     thread_ = std::thread(&StereoDepth::loop, this, device, &cfg, share_left);
 }
@@ -288,7 +289,7 @@ void StereoDepth::loop(std::string device, const RuntimeConfig* cfg, bool share_
         resize(disp_vis, disp_small, Size(), 0.5, 0.5, INTER_LINEAR);
 
         std::vector<uchar> buf;
-        std::vector<int> enc_params = {IMWRITE_JPEG_QUALITY, cfg->stereo_jpeg_quality};
+        std::vector<int> enc_params = {IMWRITE_JPEG_QUALITY, jpeg_quality_.load()};
         imencode(".jpg", disp_small, buf, enc_params);
         zmq::message_t msg(buf.size());
         std::memcpy(msg.data(), buf.data(), buf.size());

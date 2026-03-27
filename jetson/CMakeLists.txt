@@ -78,6 +78,7 @@ add_executable(${PROJECT_NAME}
     mission.cpp
     stereo_depth.cpp
     sensor_store.cpp
+    system_monitor.cpp
     runtime_config.cpp
     logger.cpp
     ${BOT_SORT_SOURCES}

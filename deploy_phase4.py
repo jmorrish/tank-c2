@@ -38,6 +38,13 @@ FILES = [
     "include/path_planner.h",
     "include/nav2_planner.h",
     "include/obstacle_utils.h",
+    "include/stereo_depth.h",
+    "include/system_monitor.h",
+    "stereo_depth.cpp",
+    "include/runtime_config.h",
+    "system_monitor.cpp",
+    "runtime_config.cpp",
+    "config.json",
     # Config/script files
     "nav2_params.yaml",
     "ekf_params.yaml",

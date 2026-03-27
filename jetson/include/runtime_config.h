@@ -7,11 +7,11 @@
 struct RuntimeConfig {
 
     // ── Network ─────────────────────────────────────────────────────────────
-    std::string teensy_ip          = "192.168.0.177";
+    std::string teensy_ip          = "192.168.1.177";
     int         teensy_port        = 23;
-    std::string sensor_ip          = "192.168.0.178";
+    std::string sensor_ip          = "192.168.1.178";
     int         sensor_port        = 23;
-    std::string cam2_rtsp          = "rtsp://192.168.0.71/z3-2.sdp";
+    std::string cam2_rtsp          = "rtsp://192.168.1.71/z3-2.sdp";
     int         web_ipc_port       = 9999;
 
     // ── Sensor staleness ────────────────────────────────────────────────────

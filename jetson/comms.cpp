@@ -578,6 +578,17 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
         return "";
     }
 
+    // ── Depth quality: depth_quality:<1-100> ─────────────────────────────────
+    if (cmd.rfind("depth_quality:", 0) == 0) {
+        try {
+            int q = std::stoi(cmd.substr(14));
+            q = std::clamp(q, 1, 100);
+            stereo_depth_.setJpegQuality(q);
+            LOGI("Depth quality set to " << q);
+        } catch (...) {}
+        return "";
+    }
+
     LOGW("Unknown web command: " << cmd);
     return "";
 }

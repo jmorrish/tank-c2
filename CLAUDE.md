@@ -86,12 +86,12 @@
 |-----------|--------|------|------|-------|
 | BNO085 IMU | Serial3 | TX=14, RX=15 | 115200 | PS0=GND, PS1=3V3 (SH2-UART). Adafruit_BNO08x lib, single instance only |
 | BN880 GPS | Serial6 | TX=24, RX=25 | 115200 | NMEA, $GNGGA + $GNRMC forwarded |
-| TOF sensor | Serial8 | TX=35, RX=34 | 921600 | 16-byte binary frame, 0x57 header |
+| TOF sensor | Serial7 | TX=29, RX=28 | 921600 | 16-byte binary frame, 0x57 header |
 | Left encoder | — | A=33, B=34 | — | Interrupt on A, direction from B |
 | Right encoder | — | A=36, B=35 | — | Interrupt on A, direction from B |
 | Ethernet | built-in | — | — | Static IP 192.168.1.178, port 23 |
 
-⚠ TOF RX=34 and Left ENC B=34 share the same pin — move TOF to Serial7 (RX=28) if both needed simultaneously.
+TOF moved from Serial8 to Serial7 to resolve pin conflict with encoder B pins (34/35).
 
 ## Sensor Teensy Protocol
 **Outbound (Teensy → Jetson):**
@@ -215,7 +215,7 @@ Plus existing: `ros-humble-slam-toolbox`, `ydlidar_ros2_driver` (built from sour
 - [ ] **Return to home** — Save start GPS on launch, trigger RTH on low battery, connection loss, or operator command
 - [ ] **Battery monitoring** — Voltage divider → Sensor Teensy ADC pin, low-voltage alerts + auto-RTH threshold
 - [ ] **Mission progress readout** — Broadcast distance to waypoint, bearing error, ETA as `mission_progress` event to web UI
-- [ ] **Jetson system stats** — CPU %, RAM, GPU temp via psutil, once per second in status JSON. Warn before thermal throttle
+- [x] **Jetson system stats** — SystemMonitor thread reads sysfs every 2s, pushes CPU/GPU temp, CPU/GPU usage, RAM via setGeneric(). SYSTEM card on web dashboard
 - [ ] **Telemetry logging** — GPS track, sensor readings, mode transitions, obstacle events to `/home/james/tank_logs/`
 - [ ] **Video recording** — Save detection frames during active missions for post-mission replay
 - [ ] **Run log viewer** — Serve `/tmp/robot_run.csv` via web UI for post-mission review
@@ -233,6 +233,7 @@ Plus existing: `ros-humble-slam-toolbox`, `ydlidar_ros2_driver` (built from sour
 - [ ] **MR60BHA2 60GHz mmWave** — Vitals check on downed persons. UART 115200. Stop-and-scan only (won't work while moving — vibration swamps micro-Doppler). Stop near YOLO-detected person, hold still 15-20s, read breathing rate + heart rate. Works through smoke/dust/fog. Range: ~1.5m breathing, ~0.5m heartbeat. Single target, 60° FoV. Does NOT penetrate concrete/rubble (need UWB for that)
 - [ ] **MQ-2 gas sensor** — LPG, propane, hydrogen detection. Analog output → Sensor Teensy ADC
 - [ ] **MQ-7 gas sensor** — Carbon monoxide detection. Analog output → Sensor Teensy ADC
+- [ ] **Voice localization mic array** — 4x INMP441 I2S MEMS mics at chassis corners (30-40 cm spacing). Bandpass 200-2 kHz, GCC-PHAT TDOA for bearing estimation. Wire to dedicated Teensy or Sensor Teensy I2S. Process with ODAS on Jetson or compute TDOA on Teensy. Output azimuth via setGeneric("voice_azimuth_deg"). Wide spacing optimised for outdoor use in voice band (200 Hz - 2 kHz). Effective range: 2-4m outdoors with motors stopped. NI cDAQ-9171/9222 not viable (no ARM SDK)
 
 **Hardware / mechanical:**
 - [ ] **PTU homing + position feedback** — Limit switch homing sequence on startup, display pan/tilt angle in UI

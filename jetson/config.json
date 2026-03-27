@@ -1,9 +1,9 @@
 {
-    "teensy_ip": "192.168.0.177",
+    "teensy_ip": "192.168.1.177",
     "teensy_port": 23,
-    "sensor_ip": "192.168.0.178",
+    "sensor_ip": "192.168.1.178",
     "sensor_port": 23,
-    "cam2_rtsp": "rtsp://192.168.0.71/z3-2.sdp",
+    "cam2_rtsp": "rtsp://192.168.1.71/z3-2.sdp",
     "web_ipc_port": 9999,
 
     "sensor_stale_ms": 500.0,

@@ -28,6 +28,10 @@ public:
 
     bool running() const { return run_.load(); }
 
+    // Set JPEG quality for the depth stream (1-100), callable from any thread
+    void setJpegQuality(int q) { jpeg_quality_.store(q); }
+    int  getJpegQuality() const { return jpeg_quality_.load(); }
+
     // Returns true and copies the latest left half-frame when a new one is
     // available (only produces frames when started with share_left=true).
     // Thread-safe; clears the "new" flag on read.
@@ -38,6 +42,7 @@ private:
 
     std::thread       thread_;
     std::atomic<bool> run_{false};
+    std::atomic<int>  jpeg_quality_{60};
 
     mutable std::mutex left_mtx_;
     cv::Mat            latest_left_;

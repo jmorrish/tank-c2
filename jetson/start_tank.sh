@@ -99,7 +99,7 @@ STEP=$((STEP + 1))
 
 # 6. Main app (detection + tracking + comms)
 echo "[start_tank] $STEP/$TOTAL Main app..."
-$DETECT/build/yolov8 $ENGINE --auto-continue --headless &
+$DETECT/build/yolov8 $ENGINE --auto-continue --headless --config $DETECT/config.json &
 PIDS+=($!)
 
 echo ""
