@@ -2,7 +2,12 @@
 #include <limits>
 #include <algorithm>
 #include <vector>
+#include <atomic>
+#include <csignal>
 #include <opencv2/opencv.hpp>
+
+static std::atomic<bool> g_running{true};
+static void sig_handler(int) { g_running.store(false); }
 
 #include "helpers.h"
 #include "comms.h"
@@ -206,9 +211,13 @@ int main(int argc, char** argv){
 
     LOGI("All subsystems running. Press Ctrl+C to exit.");
 
-    while (true)
+    std::signal(SIGINT,  sig_handler);
+    std::signal(SIGTERM, sig_handler);
+
+    while (g_running.load())
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+    LOGI("Shutting down...");
     coordinator.stop();
     det.stop();
     comms.stopWebIPC();

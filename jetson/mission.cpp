@@ -329,7 +329,11 @@ void MissionRunner::loop(Comms* comms, const RuntimeConfig* cfg) {
                         heading_calibrated = true;
                     } else {
                         const double alpha = cfg->mission_heading_filter;
-                        heading_offset = heading_offset * (1.0 - alpha) + raw_offset * alpha;
+                        // Circular mean to avoid wrapping artefact near 0/360
+                        double diff = raw_offset - heading_offset;
+                        if (diff > 180.0)  diff -= 360.0;
+                        if (diff < -180.0) diff += 360.0;
+                        heading_offset = std::fmod(heading_offset + alpha * diff + 360.0, 360.0);
                     }
                 }
             }

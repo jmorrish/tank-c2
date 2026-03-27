@@ -127,9 +127,21 @@ bool Comms::imuRate(float hz){
 
 // ── NMEA parsing helpers ────────────────────────────────────────────────────
 
+static bool nmea_checksum_ok(const std::string& line, size_t star_pos) {
+    if (star_pos + 2 >= line.size()) return false;
+    unsigned char calc = 0;
+    // XOR every byte between '$' and '*' (exclusive)
+    for (size_t i = 1; i < star_pos; ++i)
+        calc ^= static_cast<unsigned char>(line[i]);
+    unsigned int expected = 0;
+    if (std::sscanf(line.c_str() + star_pos + 1, "%02X", &expected) != 1) return false;
+    return calc == expected;
+}
+
 void Comms::parseGGA(const std::string& line) {
     size_t star_pos = line.find('*');
     if (star_pos == std::string::npos) return;
+    if (!nmea_checksum_ok(line, star_pos)) return;
     std::string sentence = line.substr(0, star_pos);
     std::stringstream ss(sentence);
     std::string token;
@@ -185,6 +197,7 @@ void Comms::parseGGA(const std::string& line) {
 void Comms::parseRMC(const std::string& line) {
     size_t star_pos = line.find('*');
     if (star_pos == std::string::npos) return;
+    if (!nmea_checksum_ok(line, star_pos)) return;
     std::string sentence = line.substr(0, star_pos);
     std::stringstream ss(sentence);
     std::string token;
@@ -304,6 +317,7 @@ void Comms::stopWebIPC() {
 // server.js detects {type:"event"} lines and re-broadcasts them as mission_status
 // without overwriting lastStatus.
 void Comms::sendWebEvent(const std::string& json_str) {
+    std::lock_guard<std::mutex> lk(web_mtx_);
     int fd = web_client_.load();
     if (fd < 0) return;
     std::string line = json_str + "\n";

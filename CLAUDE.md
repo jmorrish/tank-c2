@@ -5,6 +5,7 @@
 - **VPS** (87.106.188.134) — Node.js `server.js`, website host, WebSocket relay
 - **Control Teensy 4.1** (192.168.1.177:23) — Wheels + PTU
 - **Sensor Teensy 4.1** (192.168.1.178:23) — BNO085 IMU + BN880 GPS + TOF + wheel encoders
+- **FLIR Tau Thermal Camera** (192.168.0.71, RTSP) — Thermal imaging via `rtsp://192.168.0.71/z3-2.sdp`, grabbed by `cam2_rtsp` thread in object_detection.cpp
 
 ## Credentials
 - VPS SSH: `root` / `CP2Xy3TDzxHGVpcV`
@@ -197,6 +198,49 @@ sudo apt install ros-humble-nav2-planner ros-humble-nav2-costmap-2d \
   ros-humble-robot-localization
 ```
 Plus existing: `ros-humble-slam-toolbox`, `ydlidar_ros2_driver` (built from source in `~/ros2_ws`)
+
+## Feature Roadmap
+**Safety-critical (before autonomous outdoor driving):**
+- [ ] **Watchdog failsafe** — Control Teensy auto-stops motors after 500ms no heartbeat from Jetson. Prevents runaway if C++ app crashes
+- [ ] **Geofence** — Virtual boundary (circle/polygon) checked in `navigateTo()`, abort mission if breached. Draw on mission map UI
+- [ ] **Connection-loss behavior** — Configurable policy (continue / pause / return home) when comms drop. Layered: 4G lost but LoRa up → pause; both lost → RTH
+
+**Comms upgrade (replace WiFi for field use):**
+- [ ] **4G/5G modem** — Primary internet link via USB dongle or HAT + SIM. Drop-in WiFi replacement, existing VPS relay architecture works unchanged
+- [ ] **LoRa backup channel** — Low-bandwidth safety net (300bps–50kbps, 2-15km range). Emergency stop, GPS beacon, heartbeat, RTH trigger. Works where cell signal doesn't
+- [ ] **LoRa base station** — ESP32 or Teensy with LoRa module + small display as handheld controller showing GPS position + battery + emergency stop button
+- [ ] **LoRa integration on Jetson side** — LoRa module via SPI on Sensor Teensy, or dedicated ESP32 radio bridge independent of main system
+
+**High-value operational features:**
+- [ ] **Return to home** — Save start GPS on launch, trigger RTH on low battery, connection loss, or operator command
+- [ ] **Battery monitoring** — Voltage divider → Sensor Teensy ADC pin, low-voltage alerts + auto-RTH threshold
+- [ ] **Mission progress readout** — Broadcast distance to waypoint, bearing error, ETA as `mission_progress` event to web UI
+- [ ] **Jetson system stats** — CPU %, RAM, GPU temp via psutil, once per second in status JSON. Warn before thermal throttle
+- [ ] **Telemetry logging** — GPS track, sensor readings, mode transitions, obstacle events to `/home/james/tank_logs/`
+- [ ] **Video recording** — Save detection frames during active missions for post-mission replay
+- [ ] **Run log viewer** — Serve `/tmp/robot_run.csv` via web UI for post-mission review
+- [ ] **OTA config update** — Web UI panel for live PID gains, speed limits, obstacle threshold tuning without SSH
+
+**Behaviour / detection features:**
+- [ ] **Multi-person queue** — When active follow target lost for >Ns, auto-switch to next known person in gallery
+- [ ] **Multi-target awareness** — Patrol + alert mode monitoring all detected people, notifying operator
+- [ ] **Person heatmap** — Log gallery person sightings with GPS, overlay on mission map as heatmap
+- [ ] **Night/low-light mode** — Switch to FLIR thermal cam2 for detection when visible-light confidence drops. IR illuminator as secondary option
+- [ ] **Voice/text alert via Claude** — On known person detection during mission, push notification to browser via Haiku API call
+
+**Additional sensors (hardware acquired):**
+- [ ] **BME680 (temp/humidity/pressure/gas)** — Adafruit STEMMA QT, I2C. Environmental monitoring + air quality index. Wire to Sensor Teensy I2C
+- [ ] **MR60BHA2 60GHz mmWave** — Vitals check on downed persons. UART 115200. Stop-and-scan only (won't work while moving — vibration swamps micro-Doppler). Stop near YOLO-detected person, hold still 15-20s, read breathing rate + heart rate. Works through smoke/dust/fog. Range: ~1.5m breathing, ~0.5m heartbeat. Single target, 60° FoV. Does NOT penetrate concrete/rubble (need UWB for that)
+- [ ] **MQ-2 gas sensor** — LPG, propane, hydrogen detection. Analog output → Sensor Teensy ADC
+- [ ] **MQ-7 gas sensor** — Carbon monoxide detection. Analog output → Sensor Teensy ADC
+
+**Hardware / mechanical:**
+- [ ] **PTU homing + position feedback** — Limit switch homing sequence on startup, display pan/tilt angle in UI
+- [ ] **RTAB-Map 3D mapping** — Full 3D SLAM using stereo depth (ZMQ port 5557 already publishes rectified pairs)
+- [ ] **Nav2 controller (DWB/MPPI)** — Replace proportional steering with velocity-space trajectory optimisation. Separate project
+
+**Far future:**
+- [ ] **Multi-tank fleet** — Inter-vehicle comms, fleet coordination. Current TCP architecture extends naturally to this
 
 ## Known Issues / Gotchas
 - **Stereo camera modes**: Camera is opened at 2560×720 MJPEG. Full frame → stereo depth, left half (1280×720) → detection. **2560×720 MJPEG only supports 30fps** — requesting any other fps causes V4L2 to fall back to raw YUV at 3fps. Always use `CAP_PROP_FPS, 30` for this resolution. Calibration: `/home/james/stereo_calib/stereo_params_cuda.xml`.

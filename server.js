@@ -406,7 +406,7 @@ function connectJetson() {
                     lastStatus = parsed;
                     broadcast({ type: 'status', data: lastStatus });
                 }
-            } catch {}
+            } catch (e) { console.warn('[jetson] JSON parse error:', e.message); }
         }
     });
 
@@ -505,7 +505,7 @@ wss.on('connection', (ws) => {
                 ws.send(JSON.stringify({ type: 'ack', cmd, ok }));
                 console.log(`[cmd] ${ok ? 'sent' : 'QUEUED'}: ${cmd.slice(0, 80)}`);
             }
-        } catch {}
+        } catch (e) { console.warn('[ws] message parse error:', e.message); }
     });
     ws.on('close', () => { clients.delete(ws); wsAlive.delete(ws); });
     ws.on('error', () => { clients.delete(ws); wsAlive.delete(ws); });
