@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Tank C2 - Configuration Reference</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 20px; max-width: 1400px; }
+  h1 { color: #00e676; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px; }
+  h2 { color: #00b0ff; letter-spacing: 2px; font-size: 15px; margin-top: 40px; margin-bottom: 4px; }
+  h3 { color: #ffab00; letter-spacing: 1px; font-size: 13px; margin-top: 25px; margin-bottom: 4px; }
+  .note { color: #64748b; font-size: 11px; margin-bottom: 12px; }
+  .section { margin-bottom: 50px; }
+  p { font-size: 12px; line-height: 1.6; margin: 6px 0; }
+
+  table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+  th { background: #111827; color: #00b0ff; font-size: 11px; letter-spacing: 1px; padding: 6px 12px; border: 1px solid #1f2937; text-align: left; white-space: nowrap; }
+  td { background: #0d1220; font-size: 11px; padding: 5px 12px; border: 1px solid #1f2937; }
+
+  .field   { color: #00e676; font-weight: bold; }
+  .key     { color: #ffab00; }
+  .type    { color: #b47ffe; }
+  .default { color: #e2e8f0; }
+  .range   { color: #64748b; }
+  .desc    { color: #94a3b8; }
+  .restart { color: #ff6d00; font-weight: bold; }
+  .runtime { color: #00e676; }
+  .cli     { color: #00b0ff; font-weight: bold; }
+
+  .info-box { background: #111827; border: 1px solid #1f2937; border-radius: 6px; padding: 14px 18px; font-size: 11px; margin: 12px 0; line-height: 1.7; }
+  .warn-box { background: #1a0a0a; border: 1px solid #ff6d00; border-radius: 4px; padding: 8px 14px; font-size: 11px; color: #ff6d00; margin: 10px 0; display: inline-block; }
+
+  pre { background: #111827; border: 1px solid #1f2937; border-radius: 6px; padding: 14px 18px; font-size: 11px; overflow-x: auto; line-height: 1.5; color: #e2e8f0; }
+  code { color: #00e676; }
+
+  .toc { list-style: none; padding: 0; margin: 10px 0; }
+  .toc li { padding: 2px 0; }
+  .toc a { color: #00b0ff; text-decoration: none; font-size: 12px; }
+  .toc a:hover { text-decoration: underline; }
+
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 10px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+</style>
+</head>
+<body>
+
+<h1>TANK C2 - CONFIGURATION REFERENCE</h1>
+<p class="note">Complete reference for all configurable fields in the yolov8 C++ application.<br>
+Source: <code>include/runtime_config.h</code> + <code>runtime_config.cpp</code> + <code>main.cpp</code> | Generated 2026-03-28</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div><span class="runtime">Runtime</span> -- loaded from config.json at startup</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6d00"></div><span class="restart">Restart</span> -- requires app restart to take effect</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00b0ff"></div><span class="cli">CLI</span> -- overridable via command-line argument</div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="section">
+<h2>CONTENTS</h2>
+<ul class="toc">
+  <li><a href="#loading">1. Config Loading Order</a></li>
+  <li><a href="#cli">2. CLI Arguments</a></li>
+  <li><a href="#network">3. Network</a></li>
+  <li><a href="#sensor">4. Sensor Staleness</a></li>
+  <li><a href="#ptu-pid">5. PTU PID Gains</a></li>
+  <li><a href="#ptu-motion">6. PTU Motion Limits</a></li>
+  <li><a href="#ptu-soft">7. PTU Soft Limits</a></li>
+  <li><a href="#detection">8. Detection</a></li>
+  <li><a href="#reid">9. Person Re-ID / Gallery</a></li>
+  <li><a href="#autolearn">10. Auto-Learn</a></li>
+  <li><a href="#learn">11. Learn Mode</a></li>
+  <li><a href="#streaming">12. Streaming</a></li>
+  <li><a href="#follow">13. Wheel Follow Behaviour</a></li>
+  <li><a href="#wheel-pi">14. Wheel Encoder Closed-Loop PI</a></li>
+  <li><a href="#imu-tilt">15. IMU Tilt Feedforward</a></li>
+  <li><a href="#stereo">16. Stereo Depth</a></li>
+  <li><a href="#mission">17. Mission Navigation</a></li>
+  <li><a href="#telemetry">18. Telemetry</a></li>
+  <li><a href="#zmq">19. ZMQ Ports</a></li>
+  <li><a href="#lidar">20. Lidar</a></li>
+  <li><a href="#paths">21. Paths</a></li>
+  <li><a href="#derived">22. Derived Paths (computed)</a></li>
+  <li><a href="#compile">23. Compile-Time Constants</a></li>
+  <li><a href="#example">24. Current config.json</a></li>
+</ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="loading">
+<h2>1. CONFIG LOADING ORDER</h2>
+<div class="info-box">
+<strong>Precedence (highest wins):</strong><br>
+<br>
+1. <span class="cli">CLI arguments</span> -- <code>--ptu-ip</code>, <code>--sensor-ip</code>, <code>--detect-cam</code>, etc.<br>
+2. <span class="key">config.json</span> -- JSON file loaded at startup (default: <code>./config.json</code> in working dir)<br>
+3. <span class="field">Compiled defaults</span> -- values in <code>runtime_config.h</code> struct initializers<br>
+<br>
+The config file path itself can be overridden: <code>--config /path/to/config.json</code><br>
+Missing keys in config.json are silently ignored (compiled default used).<br>
+Type mismatches are silently ignored (compiled default used).<br>
+If the config file is missing or unparseable, all compiled defaults are used and a warning is logged.
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="cli">
+<h2>2. CLI ARGUMENTS</h2>
+<p class="note">Usage: ./yolov8 &lt;engine_path&gt; [options]</p>
+
+<table>
+  <tr>
+    <th>Argument</th>
+    <th>Value</th>
+    <th>Default</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="cli">&lt;engine_path&gt;</td>
+    <td class="type">string (positional, required)</td>
+    <td class="default">--</td>
+    <td class="desc">Path to YOLOv8 TensorRT engine file (e.g. yolov8n.engine)</td>
+  </tr>
+  <tr>
+    <td class="cli">--config &lt;path&gt;</td>
+    <td class="type">string</td>
+    <td class="default">config.json</td>
+    <td class="desc">Path to runtime config JSON file. Pre-scanned before other args.</td>
+  </tr>
+  <tr>
+    <td class="cli">--headless</td>
+    <td class="type">flag</td>
+    <td class="default">false</td>
+    <td class="desc">Disable OpenCV GUI windows (required for SSH / no display)</td>
+  </tr>
+  <tr>
+    <td class="cli">--auto-continue</td>
+    <td class="type">flag</td>
+    <td class="default">false</td>
+    <td class="desc">Skip interactive "Press Enter" prompts at startup</td>
+  </tr>
+  <tr>
+    <td class="cli">--no-hw</td>
+    <td class="type">flag</td>
+    <td class="default">false</td>
+    <td class="desc">Skip all hardware connections (Teensy control + sensor). Web IPC still starts.</td>
+  </tr>
+  <tr>
+    <td class="cli">--ptu-ip &lt;ip:port&gt;</td>
+    <td class="type">string</td>
+    <td class="default">from config teensy_ip:teensy_port</td>
+    <td class="desc">Override Control Teensy IP and port (e.g. 192.168.1.177:23)</td>
+  </tr>
+  <tr>
+    <td class="cli">--ip &lt;ip&gt;</td>
+    <td class="type">string</td>
+    <td class="default">from config teensy_ip</td>
+    <td class="desc">Override Control Teensy IP only</td>
+  </tr>
+  <tr>
+    <td class="cli">--port &lt;n&gt;</td>
+    <td class="type">int</td>
+    <td class="default">from config teensy_port</td>
+    <td class="desc">Override Control Teensy port only</td>
+  </tr>
+  <tr>
+    <td class="cli">--sensor-ip &lt;ip:port&gt;</td>
+    <td class="type">string</td>
+    <td class="default">from config sensor_ip:sensor_port</td>
+    <td class="desc">Override Sensor Teensy IP and port. If no colon, sets IP only.</td>
+  </tr>
+  <tr>
+    <td class="cli">--sensor-port &lt;n&gt;</td>
+    <td class="type">int</td>
+    <td class="default">from config sensor_port</td>
+    <td class="desc">Override Sensor Teensy port only</td>
+  </tr>
+  <tr>
+    <td class="cli">--detect-cam &lt;dev&gt;</td>
+    <td class="type">string</td>
+    <td class="default">auto-detect</td>
+    <td class="desc">Detection camera device (e.g. /dev/video0). Empty = runtime scan.</td>
+  </tr>
+  <tr>
+    <td class="cli">--stereo-cam &lt;dev&gt;</td>
+    <td class="type">string</td>
+    <td class="default">auto-detect</td>
+    <td class="desc">Stereo camera device (identified by 2560x720 capability). Empty = disabled.</td>
+  </tr>
+</table>
+
+<div class="info-box">
+<strong>Example:</strong><br>
+<code>./yolov8 /home/james/YOLOv8-TensorRT/yolov8n.engine --auto-continue --headless --config /home/james/config.json</code>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="network">
+<h2>3. NETWORK</h2>
+<p class="note">TCP connections to Teensy controllers and VPS relay. All require restart.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">teensy_ip</td>
+    <td class="key">"teensy_ip"</td>
+    <td class="type">string</td>
+    <td class="default">"192.168.1.177"</td>
+    <td class="range">valid IPv4</td>
+    <td class="restart">restart</td>
+    <td class="desc">Control Teensy IP address (wheels + PTU). Overridable via <code>--ptu-ip</code> or <code>--ip</code>.</td>
+  </tr>
+  <tr>
+    <td class="field">teensy_port</td>
+    <td class="key">"teensy_port"</td>
+    <td class="type">int</td>
+    <td class="default">23</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">Control Teensy TCP port. Overridable via <code>--ptu-ip</code> or <code>--port</code>.</td>
+  </tr>
+  <tr>
+    <td class="field">sensor_ip</td>
+    <td class="key">"sensor_ip"</td>
+    <td class="type">string</td>
+    <td class="default">"192.168.1.178"</td>
+    <td class="range">valid IPv4</td>
+    <td class="restart">restart</td>
+    <td class="desc">Sensor Teensy IP address (IMU, GPS, TOF, encoders). Overridable via <code>--sensor-ip</code>.</td>
+  </tr>
+  <tr>
+    <td class="field">sensor_port</td>
+    <td class="key">"sensor_port"</td>
+    <td class="type">int</td>
+    <td class="default">23</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">Sensor Teensy TCP port. Overridable via <code>--sensor-ip</code> or <code>--sensor-port</code>.</td>
+  </tr>
+  <tr>
+    <td class="field">cam2_rtsp</td>
+    <td class="key">"cam2_rtsp"</td>
+    <td class="type">string</td>
+    <td class="default">"rtsp://192.168.1.71/z3-2.sdp"</td>
+    <td class="range">valid RTSP URL</td>
+    <td class="restart">restart</td>
+    <td class="desc">FLIR Tau thermal camera RTSP stream URL. Used by cam2_rtsp thread in object_detection.cpp.</td>
+  </tr>
+  <tr>
+    <td class="field">web_ipc_port</td>
+    <td class="key">"web_ipc_port"</td>
+    <td class="type">int</td>
+    <td class="default">9999</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">TCP port for VPS IPC (status JSON + commands from web UI).</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="sensor">
+<h2>4. SENSOR STALENESS</h2>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">sensor_stale_ms</td>
+    <td class="key">"sensor_stale_ms"</td>
+    <td class="type">double</td>
+    <td class="default">500.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Milliseconds after which sensor readings are considered stale. Affects IMU/GPS/TOF freshness checks.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="ptu-pid">
+<h2>5. PTU PID GAINS</h2>
+<p class="note">PID controller for pan/tilt unit tracking. Controls stepper speed based on pixel error from frame center.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">kp</td>
+    <td class="key">"kp"</td>
+    <td class="type">float</td>
+    <td class="default">1.5</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Proportional gain. Higher = more aggressive tracking. Too high causes oscillation.</td>
+  </tr>
+  <tr>
+    <td class="field">ki</td>
+    <td class="key">"ki"</td>
+    <td class="type">float</td>
+    <td class="default">0.1</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Integral gain. Eliminates steady-state error. Clamped by max_i.</td>
+  </tr>
+  <tr>
+    <td class="field">kd</td>
+    <td class="key">"kd"</td>
+    <td class="type">float</td>
+    <td class="default">0.1</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Derivative gain. Dampens oscillation. Sensitive to noise.</td>
+  </tr>
+  <tr>
+    <td class="field">max_i</td>
+    <td class="key">"max_i"</td>
+    <td class="type">float</td>
+    <td class="default">1000.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Integral windup clamp (absolute). Prevents runaway accumulation.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="ptu-motion">
+<h2>6. PTU MOTION LIMITS</h2>
+<p class="note">Velocity and deadband limits for PTU stepper commands sent to Control Teensy.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">center_threshold</td>
+    <td class="key">"center_threshold"</td>
+    <td class="type">float</td>
+    <td class="default">20.0</td>
+    <td class="range">&ge; 0 px</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Pixel deadband. PTU stops moving when target is within this many pixels of frame center.</td>
+  </tr>
+  <tr>
+    <td class="field">min_speed</td>
+    <td class="key">"min_speed"</td>
+    <td class="type">float</td>
+    <td class="default">0.0</td>
+    <td class="range">&ge; 0 sps</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum PTU stepper speed (steps/second). Below this, PTU stops.</td>
+  </tr>
+  <tr>
+    <td class="field">max_speed</td>
+    <td class="key">"max_speed"</td>
+    <td class="type">float</td>
+    <td class="default">2000.0</td>
+    <td class="range">&gt; 0 sps</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum PTU stepper speed (steps/second). Clamps PID output.</td>
+  </tr>
+  <tr>
+    <td class="field">velo_eps</td>
+    <td class="key">"velo_eps"</td>
+    <td class="type">float</td>
+    <td class="default">25.0</td>
+    <td class="range">&ge; 0 sps</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Velocity change threshold. New command only sent if delta exceeds this (reduces Teensy traffic).</td>
+  </tr>
+  <tr>
+    <td class="field">max_delta_velo</td>
+    <td class="key">"max_delta_velo"</td>
+    <td class="type">float</td>
+    <td class="default">500.0</td>
+    <td class="range">&gt; 0 sps</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Max velocity change per step. Rate-limits PTU acceleration to prevent mechanical jerk.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="ptu-soft">
+<h2>7. PTU SOFT LIMITS</h2>
+<p class="note">Accumulated step limits from startup position. Prevents PTU from over-rotating and hitting hard stops.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">pan_limit_steps</td>
+    <td class="key">"pan_limit_steps"</td>
+    <td class="type">float</td>
+    <td class="default">50000.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Max accumulated pan steps (+/-) from startup zero. At 1600 steps/rev = ~31 full revolutions.</td>
+  </tr>
+  <tr>
+    <td class="field">tilt_limit_steps</td>
+    <td class="key">"tilt_limit_steps"</td>
+    <td class="type">float</td>
+    <td class="default">20000.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Max accumulated tilt steps (+/-) from startup zero. At 1600 steps/rev = ~12.5 full revolutions.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="detection">
+<h2>8. DETECTION</h2>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">confidence_threshold</td>
+    <td class="key">"confidence_threshold"</td>
+    <td class="type">float</td>
+    <td class="default">0.40</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">YOLOv8 detection confidence threshold. Detections below this are discarded. Lower = more detections but more false positives.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="reid">
+<h2>9. PERSON RE-ID / GALLERY</h2>
+<p class="note">BoTSORT tracking with cosine-similarity re-identification against persistent person gallery.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">gallery_match_thresh</td>
+    <td class="key">"gallery_match_thresh"</td>
+    <td class="type">float</td>
+    <td class="default">0.75</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Cosine similarity threshold for re-ID match. Higher = stricter matching. Below this, person is treated as unknown.</td>
+  </tr>
+  <tr>
+    <td class="field">embed_ema_alpha</td>
+    <td class="key">"embed_ema_alpha"</td>
+    <td class="type">float</td>
+    <td class="default">0.1</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">EMA weight for new embedding updates. Lower = more stable identity (slower adaptation). Higher = faster adaptation to appearance changes.</td>
+  </tr>
+  <tr>
+    <td class="field">max_extra_embeddings</td>
+    <td class="key">"max_extra_embeddings"</td>
+    <td class="type">int</td>
+    <td class="default">100</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Max extra embeddings stored per person in gallery. Caps memory usage for long sessions.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="autolearn">
+<h2>10. AUTO-LEARN</h2>
+<p class="note">Automatic gallery enrollment of tracked persons that meet quality criteria.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">auto_learn_interval_ms</td>
+    <td class="key">"auto_learn_interval_ms"</td>
+    <td class="type">int</td>
+    <td class="default">3000</td>
+    <td class="range">&gt; 0 ms</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum interval between auto-learn captures for the same person.</td>
+  </tr>
+  <tr>
+    <td class="field">auto_learn_min_conf</td>
+    <td class="key">"auto_learn_min_conf"</td>
+    <td class="type">float</td>
+    <td class="default">0.80</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum detection confidence for auto-learn capture. Higher than detection threshold to ensure quality.</td>
+  </tr>
+  <tr>
+    <td class="field">auto_learn_min_area</td>
+    <td class="key">"auto_learn_min_area"</td>
+    <td class="type">int</td>
+    <td class="default">8192</td>
+    <td class="range">&gt; 0 px^2</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum bounding box area (pixels) for auto-learn. ~64x128 px. Rejects distant / small detections.</td>
+  </tr>
+  <tr>
+    <td class="field">auto_learn_batch_size</td>
+    <td class="key">"auto_learn_batch_size"</td>
+    <td class="type">int</td>
+    <td class="default">5</td>
+    <td class="range">&ge; 1</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Number of auto-learn samples collected before committing to gallery.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="learn">
+<h2>11. LEARN MODE</h2>
+<p class="note">Manual learn mode quality filters. Applied when operator triggers "learn" for a specific person.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">learn_sample_ms</td>
+    <td class="key">"learn_sample_ms"</td>
+    <td class="type">int</td>
+    <td class="default">500</td>
+    <td class="range">&gt; 0 ms</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum interval between learn-mode frame captures.</td>
+  </tr>
+  <tr>
+    <td class="field">learn_min_crop_px</td>
+    <td class="key">"learn_min_crop_px"</td>
+    <td class="type">int</td>
+    <td class="default">64</td>
+    <td class="range">&gt; 0 px</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum crop dimension (width or height) for learn captures. Rejects tiny crops.</td>
+  </tr>
+  <tr>
+    <td class="field">learn_blur_thresh</td>
+    <td class="key">"learn_blur_thresh"</td>
+    <td class="type">float</td>
+    <td class="default">80.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Laplacian variance threshold for blur detection. Below this, image is considered too blurry. Lower = accept blurrier images.</td>
+  </tr>
+  <tr>
+    <td class="field">learn_dup_thresh</td>
+    <td class="key">"learn_dup_thresh"</td>
+    <td class="type">float</td>
+    <td class="default">0.95</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Cosine similarity threshold to reject duplicate embeddings during learn. Above this, new sample is too similar to existing.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="streaming">
+<h2>12. STREAMING</h2>
+<p class="note">MJPEG stream and thumbnail encoding parameters.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">stream_max_w</td>
+    <td class="key">"stream_max_w"</td>
+    <td class="type">int</td>
+    <td class="default">1280</td>
+    <td class="range">&gt; 0 px</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum width for MJPEG stream frames. Frames wider than this are downscaled.</td>
+  </tr>
+  <tr>
+    <td class="field">thumb_jpeg_quality</td>
+    <td class="key">"thumb_jpeg_quality"</td>
+    <td class="type">int</td>
+    <td class="default">85</td>
+    <td class="range">1-100</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">JPEG quality for person gallery thumbnails. Higher = better quality, larger files.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="follow">
+<h2>13. WHEEL FOLLOW BEHAVIOUR</h2>
+<p class="note">FollowBehavior: PID-based person tracking using wheels. Activated when operator clicks "follow" on a person.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">follow_distance_m</td>
+    <td class="key">"follow_distance_m"</td>
+    <td class="type">float</td>
+    <td class="default">0.5</td>
+    <td class="range">&gt; 0 m</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Target follow distance in metres. Robot tries to maintain this distance from tracked person (uses stereo depth).</td>
+  </tr>
+  <tr>
+    <td class="field">wheel_gain_distance</td>
+    <td class="key">"wheel_gain_distance"</td>
+    <td class="type">float</td>
+    <td class="default">20000.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Proportional gain for distance error to wheel speed. Higher = more aggressive approach/retreat.</td>
+  </tr>
+  <tr>
+    <td class="field">wheel_gain_steer</td>
+    <td class="key">"wheel_gain_steer"</td>
+    <td class="type">float</td>
+    <td class="default">0.2</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Steering gain. Fraction of base speed applied as differential to left/right wheels for turning.</td>
+  </tr>
+  <tr>
+    <td class="field">wheel_max_sps</td>
+    <td class="key">"wheel_max_sps"</td>
+    <td class="type">int</td>
+    <td class="default">15000</td>
+    <td class="range">&gt; 0 sps</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum wheel stepper speed (steps/second). Hard clamp on wheel commands.</td>
+  </tr>
+  <tr>
+    <td class="field">max_follow_distance_m</td>
+    <td class="key">"max_follow_distance_m"</td>
+    <td class="type">float</td>
+    <td class="default">10.0</td>
+    <td class="range">&gt; follow_distance_m</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Beyond this distance, wheels stop (person too far to follow). Prevents runaway chasing.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="wheel-pi">
+<h2>14. WHEEL ENCODER CLOSED-LOOP PI</h2>
+<p class="note">PI controller for wheel speed regulation using encoder feedback. Not active until wheel encoders are physically wired.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">wheel_kp</td>
+    <td class="key">"wheel_kp"</td>
+    <td class="type">float</td>
+    <td class="default">0.3</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Proportional gain for wheel speed PI controller.</td>
+  </tr>
+  <tr>
+    <td class="field">wheel_ki</td>
+    <td class="key">"wheel_ki"</td>
+    <td class="type">float</td>
+    <td class="default">0.05</td>
+    <td class="range">&ge; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Integral gain for wheel speed PI controller.</td>
+  </tr>
+  <tr>
+    <td class="field">wheel_pi_max_i</td>
+    <td class="key">"wheel_pi_max_i"</td>
+    <td class="type">float</td>
+    <td class="default">5000.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Integral windup clamp for wheel PI controller.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="imu-tilt">
+<h2>15. IMU TILT FEEDFORWARD</h2>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">pixels_per_degree</td>
+    <td class="key">"pixels_per_degree"</td>
+    <td class="type">float</td>
+    <td class="default">5.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Camera pixels per degree of IMU tilt. Used for feedforward PTU compensation when chassis tilts.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="stereo">
+<h2>16. STEREO DEPTH</h2>
+<p class="note">CUDA StereoBM stereo depth computation. Publishes via ZMQ to ROS2 (port 5557) and mjpeg_bridge (port 5558).</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">stereo_max_fps</td>
+    <td class="key">"stereo_max_fps"</td>
+    <td class="type">float</td>
+    <td class="default">10.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum stereo depth computation rate (fps). Limits GPU load.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_left_fps</td>
+    <td class="key">"stereo_left_fps"</td>
+    <td class="type">float</td>
+    <td class="default">10.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Rate at which left rectified frames are published for RTAB-Map.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_num_disparities</td>
+    <td class="key">"stereo_num_disparities"</td>
+    <td class="type">int</td>
+    <td class="default">128</td>
+    <td class="range">16, 32, 48, ... (multiple of 16)</td>
+    <td class="restart">restart</td>
+    <td class="desc">StereoBM disparity search range. Higher = detects closer objects but slower. Must be multiple of 16.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_block_size</td>
+    <td class="key">"stereo_block_size"</td>
+    <td class="type">int</td>
+    <td class="default">9</td>
+    <td class="range">5, 7, 9, ... (odd, &ge; 5)</td>
+    <td class="restart">restart</td>
+    <td class="desc">StereoBM matching block size. Larger = smoother but less detail. Must be odd and &ge; 5.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_blur_ksize</td>
+    <td class="key">"stereo_blur_ksize"</td>
+    <td class="type">int</td>
+    <td class="default">3</td>
+    <td class="range">1, 3, 5, ... (odd)</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Gaussian blur kernel size applied before stereo matching. 1 = no blur. Must be odd.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_jpeg_quality</td>
+    <td class="key">"stereo_jpeg_quality"</td>
+    <td class="type">int</td>
+    <td class="default">60</td>
+    <td class="range">1-100</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">JPEG quality for colourised disparity frames published to ZMQ 5558.</td>
+  </tr>
+  <tr>
+    <td class="field">stereo_calib_xml</td>
+    <td class="key">"stereo_calib_xml"</td>
+    <td class="type">string</td>
+    <td class="default">"/home/james/stereo_calib/stereo_params_cuda.xml"</td>
+    <td class="range">valid file path</td>
+    <td class="restart">restart</td>
+    <td class="desc">Path to stereo calibration XML (contains map1x/y, map2x/y, P1, T matrices).</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="mission">
+<h2>17. MISSION NAVIGATION</h2>
+<p class="note">MissionBehavior: GPS waypoint navigation with Nav2 path planning and obstacle avoidance.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">mission_gps_loss_abort_s</td>
+    <td class="key">"mission_gps_loss_abort_s"</td>
+    <td class="type">float</td>
+    <td class="default">30.0</td>
+    <td class="range">&gt; 0 s</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Seconds without GPS fix before mission auto-aborts. Safety limit.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_stuck_check_s</td>
+    <td class="key">"mission_stuck_check_s"</td>
+    <td class="type">float</td>
+    <td class="default">30.0</td>
+    <td class="range">&gt; 0 s</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Interval for stuck detection check. If robot hasn't moved enough in this window, it's stuck.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_stuck_min_move_m</td>
+    <td class="key">"mission_stuck_min_move_m"</td>
+    <td class="type">float</td>
+    <td class="default">0.5</td>
+    <td class="range">&gt; 0 m</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Minimum distance robot must move within stuck_check_s to not be considered stuck.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_steer_gain</td>
+    <td class="key">"mission_steer_gain"</td>
+    <td class="type">float</td>
+    <td class="default">50.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">SPS per degree of heading error during mission navigation. Higher = sharper turns.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_max_steer_frac</td>
+    <td class="key">"mission_max_steer_frac"</td>
+    <td class="type">float</td>
+    <td class="default">0.6</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum fraction of base speed applied as differential steering. 0.6 = one wheel can be 60% slower.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_moving_knots</td>
+    <td class="key">"mission_moving_knots"</td>
+    <td class="type">float</td>
+    <td class="default">0.5</td>
+    <td class="range">&ge; 0 kt</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">GPS speed threshold (knots) for considering robot "moving". Below this, GPS course is unreliable for heading.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_heading_filter</td>
+    <td class="key">"mission_heading_filter"</td>
+    <td class="type">float</td>
+    <td class="default">0.05</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Low-pass EMA weight for GPS heading calibration. Lower = more stable but slower to adapt. Compares GPS course to IMU yaw.</td>
+  </tr>
+  <tr>
+    <td class="field">mission_ptu_ms_per_deg</td>
+    <td class="key">"mission_ptu_ms_per_deg"</td>
+    <td class="type">float</td>
+    <td class="default">10.0</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Milliseconds per degree for PTU slew during mission (e.g. centering PTU forward at waypoint).</td>
+  </tr>
+  <tr>
+    <td class="field">mission_return_speed_frac</td>
+    <td class="key">"mission_return_speed_frac"</td>
+    <td class="type">float</td>
+    <td class="default">0.33</td>
+    <td class="range">0.0 - 1.0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Speed as fraction of max when PTU is returning to center during mission. Slower = gentler return.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="telemetry">
+<h2>18. TELEMETRY</h2>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">telemetry_stale_ms</td>
+    <td class="key">"telemetry_stale_ms"</td>
+    <td class="type">float</td>
+    <td class="default">2000.0</td>
+    <td class="range">&gt; 0 ms</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Telemetry data staleness threshold. Readings older than this are omitted from status JSON.</td>
+  </tr>
+  <tr>
+    <td class="field">status_push_interval_ms</td>
+    <td class="key">"status_push_interval_ms"</td>
+    <td class="type">int</td>
+    <td class="default">1000</td>
+    <td class="range">&gt; 0 ms</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Interval between status JSON pushes to VPS via web IPC (port 9999). Lower = more responsive UI but more bandwidth.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="zmq">
+<h2>19. ZMQ PORTS</h2>
+<p class="note">ZeroMQ PUB sockets for inter-process communication on the Jetson.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">zmq_detection_port</td>
+    <td class="key">"zmq_detection_port"</td>
+    <td class="type">int</td>
+    <td class="default">5555</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">ZMQ PUB port for detection data.</td>
+  </tr>
+  <tr>
+    <td class="field">zmq_stereo_port</td>
+    <td class="key">"zmq_stereo_port"</td>
+    <td class="type">int</td>
+    <td class="default">5557</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">ZMQ PUB port for stereo rectified frame pairs (subscribed by ROS2/RTAB-Map).</td>
+  </tr>
+  <tr>
+    <td class="field">zmq_disparity_port</td>
+    <td class="key">"zmq_disparity_port"</td>
+    <td class="type">int</td>
+    <td class="default">5558</td>
+    <td class="range">1-65535</td>
+    <td class="restart">restart</td>
+    <td class="desc">ZMQ PUB port for colourised disparity JPEG frames (subscribed by mjpeg_bridge.py).</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="lidar">
+<h2>20. LIDAR</h2>
+<p class="note">YDLIDAR X3 configuration. Lidar data is forwarded to slam_bridge.py for ROS2 SLAM.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Range</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">lidar_port</td>
+    <td class="key">"lidar_port"</td>
+    <td class="type">string</td>
+    <td class="default">"/dev/ttyUSB0"</td>
+    <td class="range">valid serial device</td>
+    <td class="restart">restart</td>
+    <td class="desc">Serial port for YDLIDAR X3.</td>
+  </tr>
+  <tr>
+    <td class="field">lidar_baud</td>
+    <td class="key">"lidar_baud"</td>
+    <td class="type">int</td>
+    <td class="default">115200</td>
+    <td class="range">standard baud rates</td>
+    <td class="restart">restart</td>
+    <td class="desc">Lidar serial baud rate. X3 uses 115200.</td>
+  </tr>
+  <tr>
+    <td class="field">lidar_fwd_arc_deg</td>
+    <td class="key">"lidar_fwd_arc_deg"</td>
+    <td class="type">float</td>
+    <td class="default">30.0</td>
+    <td class="range">0 - 180 deg</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Forward arc half-angle for obstacle detection. 30 = checks +/-30 degrees from front center (60 deg total).</td>
+  </tr>
+  <tr>
+    <td class="field">lidar_obstacle_m</td>
+    <td class="key">"lidar_obstacle_m"</td>
+    <td class="type">float</td>
+    <td class="default">0.5</td>
+    <td class="range">&gt; 0 m</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Distance threshold for obstacle detection in forward arc. Objects closer than this trigger avoidance.</td>
+  </tr>
+  <tr>
+    <td class="field">lidar_max_range_m</td>
+    <td class="key">"lidar_max_range_m"</td>
+    <td class="type">float</td>
+    <td class="default">8.0</td>
+    <td class="range">&gt; 0 m</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Maximum valid lidar range. Readings beyond this are discarded (X3 max is ~8-12m).</td>
+  </tr>
+  <tr>
+    <td class="field">lidar_scan_pts</td>
+    <td class="key">"lidar_scan_pts"</td>
+    <td class="type">int</td>
+    <td class="default">180</td>
+    <td class="range">&gt; 0</td>
+    <td class="runtime">runtime</td>
+    <td class="desc">Number of points per lidar scan forwarded to slam_bridge. Controls angular resolution.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="paths">
+<h2>21. PATHS</h2>
+<p class="note">File system paths on the Jetson. All require restart.</p>
+
+<table>
+  <tr>
+    <th>Field</th>
+    <th>JSON Key</th>
+    <th>Type</th>
+    <th>Default</th>
+    <th>Restart?</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">botsort_base</td>
+    <td class="key">"botsort_base"</td>
+    <td class="type">string</td>
+    <td class="default">"/home/james/YOLOv8-TensorRT/BoTSORT-cpp"</td>
+    <td class="restart">restart</td>
+    <td class="desc">Root directory for BoTSORT tracker. Config, model, and asset paths are derived from this.</td>
+  </tr>
+  <tr>
+    <td class="field">missions_dir</td>
+    <td class="key">"missions_dir"</td>
+    <td class="type">string</td>
+    <td class="default">"/home/james/tank_missions"</td>
+    <td class="restart">restart</td>
+    <td class="desc">Directory for saved mission JSON files (GPS waypoint lists).</td>
+  </tr>
+  <tr>
+    <td class="field">targets_dir</td>
+    <td class="key">"targets_dir"</td>
+    <td class="type">string</td>
+    <td class="default">"/home/james/tank_targets"</td>
+    <td class="restart">restart</td>
+    <td class="desc">Directory for person gallery data. Each person gets a subdirectory with thumbnails + embeddings.</td>
+  </tr>
+  <tr>
+    <td class="field">log_path</td>
+    <td class="key">"log_path"</td>
+    <td class="type">string</td>
+    <td class="default">"/tmp/robot_run.csv"</td>
+    <td class="restart">restart</td>
+    <td class="desc">Path for CSV telemetry log file written during operation.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="derived">
+<h2>22. DERIVED PATHS (computed from botsort_base)</h2>
+<p class="note">These are not in config.json -- they are computed at runtime from the <code>botsort_base</code> field.</p>
+
+<table>
+  <tr>
+    <th>Method</th>
+    <th>Computed Path</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">botsortTrackerCfg()</td>
+    <td class="default">{botsort_base}/config/tracker.ini</td>
+    <td class="desc">BoTSORT tracker configuration</td>
+  </tr>
+  <tr>
+    <td class="field">botsortGmcCfg()</td>
+    <td class="default">{botsort_base}/config/gmc.ini</td>
+    <td class="desc">Global motion compensation config</td>
+  </tr>
+  <tr>
+    <td class="field">botsortReidModel()</td>
+    <td class="default">{botsort_base}/assets/mobilenetv2_x1_4_msmt17.onnx</td>
+    <td class="desc">Re-ID ONNX model for person appearance embedding</td>
+  </tr>
+  <tr>
+    <td class="field">botsortReidCfg()</td>
+    <td class="default">{botsort_base}/config/reid.ini</td>
+    <td class="desc">Re-ID model configuration</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="compile">
+<h2>23. COMPILE-TIME CONSTANTS</h2>
+<p class="note">Defined in <code>include/config.h</code>. Cannot be changed at runtime or via config.json. Requires recompilation.</p>
+
+<table>
+  <tr>
+    <th>Constant</th>
+    <th>Type</th>
+    <th>Value</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td class="field">DEFAULT_HEADLESS</td>
+    <td class="type">bool</td>
+    <td class="default">false</td>
+    <td class="desc">Default headless mode. Overridden by <code>--headless</code> CLI flag.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="example">
+<h2>24. CURRENT config.json</h2>
+<p class="note">File: <code>/home/james/YOLOv8-TensorRT/csrc/jetson/detect/config.json</code> (deployed) | <code>c:\python\tank-c2\jetson\config.json</code> (local dev)</p>
+
+<pre>{
+    "teensy_ip": "192.168.1.177",
+    "teensy_port": 23,
+    "sensor_ip": "192.168.1.178",
+    "sensor_port": 23,
+    "cam2_rtsp": "rtsp://192.168.1.71/z3-2.sdp",
+    "web_ipc_port": 9999,
+
+    "sensor_stale_ms": 500.0,
+
+    "kp": 1.5,
+    "ki": 0.1,
+    "kd": 0.1,
+    "max_i": 1000.0,
+
+    "center_threshold": 20.0,
+    "min_speed": 0.0,
+    "max_speed": 2000.0,
+    "velo_eps": 25.0,
+    "max_delta_velo": 500.0,
+
+    "pan_limit_steps": 50000.0,
+    "tilt_limit_steps": 20000.0,
+
+    "confidence_threshold": 0.40,
+
+    "gallery_match_thresh": 0.75,
+    "embed_ema_alpha": 0.1,
+    "max_extra_embeddings": 100,
+
+    "auto_learn_interval_ms": 3000,
+    "auto_learn_min_conf": 0.80,
+    "auto_learn_min_area": 8192,
+    "auto_learn_batch_size": 5,
+
+    "learn_sample_ms": 500,
+    "learn_min_crop_px": 64,
+    "learn_blur_thresh": 80.0,
+    "learn_dup_thresh": 0.95,
+
+    "stream_max_w": 1280,
+    "thumb_jpeg_quality": 85,
+
+    "follow_distance_m": 0.5,
+    "wheel_gain_distance": 20000.0,
+    "wheel_gain_steer": 0.2,
+    "wheel_max_sps": 15000,
+    "max_follow_distance_m": 10.0,
+
+    "wheel_kp": 0.3,
+    "wheel_ki": 0.05,
+    "wheel_pi_max_i": 5000.0,
+
+    "pixels_per_degree": 5.0,
+
+    "stereo_max_fps": 10.0,
+    "stereo_left_fps": 10.0,
+    "stereo_num_disparities": 128,
+    "stereo_block_size": 9,
+    "stereo_blur_ksize": 3,
+    "stereo_jpeg_quality": 60,
+    "stereo_calib_xml": "/home/james/stereo_calib/stereo_params_cuda.xml",
+
+    "mission_gps_loss_abort_s": 30.0,
+    "mission_stuck_check_s": 30.0,
+    "mission_stuck_min_move_m": 0.5,
+    "mission_steer_gain": 50.0,
+    "mission_max_steer_frac": 0.6,
+    "mission_moving_knots": 0.5,
+    "mission_heading_filter": 0.05,
+    "mission_ptu_ms_per_deg": 10.0,
+    "mission_return_speed_frac": 0.33,
+
+    "telemetry_stale_ms": 2000.0,
+    "status_push_interval_ms": 1000,
+
+    "zmq_detection_port": 5555,
+    "zmq_stereo_port": 5557,
+    "zmq_disparity_port": 5558,
+
+    "lidar_port": "/dev/ttyUSB0",
+    "lidar_baud": 115200,
+    "lidar_fwd_arc_deg": 30.0,
+    "lidar_obstacle_m": 0.5,
+    "lidar_max_range_m": 8.0,
+    "lidar_scan_pts": 180,
+
+    "botsort_base": "/home/james/YOLOv8-TensorRT/BoTSORT-cpp",
+    "missions_dir": "/home/james/tank_missions",
+    "targets_dir": "/home/james/tank_targets",
+    "log_path": "/tmp/robot_run.csv"
+}</pre>
+
+<div class="warn-box">
+  <strong>Note:</strong> All fields are optional. Missing keys silently fall back to compiled defaults.<br>
+  Type mismatches (e.g. string where int expected) are silently ignored -- the compiled default is used.<br>
+  If the entire file is missing or malformed JSON, all compiled defaults are used and a warning is logged.
+</div>
+</div>
+
+<script>
+document.querySelectorAll('table').forEach(function(t){
+  // Wrap in horizontal-scroll container
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);
+  t.style.margin='0';
+  w.appendChild(t);
+  // Card layout: find header row
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    // Mark spacer rows (rows where first td has height style or colspan=all)
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    // Add data-label to each td
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+</script>
+</body>
+</html>

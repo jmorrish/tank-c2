@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 640" width="920" height="640" font-family="'Courier New', monospace">
+
+  <!-- Background -->
+  <rect width="920" height="640" fill="#0a0e1a"/>
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <circle cx="10" cy="10" r="0.5" fill="#1a2040" opacity="0.5"/>
+  </pattern>
+  <rect width="920" height="640" fill="url(#grid)"/>
+
+  <!-- ═══ TITLE ═══ -->
+  <text x="460" y="28" text-anchor="middle" fill="#e0e8ff" font-size="15" font-weight="bold" letter-spacing="2">TANK C2 — POWER ARCHITECTURE</text>
+  <text x="460" y="44" text-anchor="middle" fill="#667799" font-size="9">Shared 18V bus via Schottky diodes — balanced loading across both packs</text>
+  <line x1="120" y1="50" x2="800" y2="50" stroke="#2a3560" stroke-width="1"/>
+
+  <!-- ═══ BATTERIES ═══ -->
+
+  <!-- Battery 1 (top left) -->
+  <g id="bat1">
+    <rect x="50" y="62" width="155" height="72" rx="6" fill="#1a2440" stroke="#ff6b35" stroke-width="2"/>
+    <rect x="50" y="62" width="155" height="20" rx="6" fill="#ff6b35" opacity="0.25"/>
+    <text x="127" y="76"  text-anchor="middle" fill="#ff9955" font-size="9"  font-weight="bold">BATTERY 1</text>
+    <text x="127" y="93"  text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold">Bosch ProCore</text>
+    <text x="127" y="108" text-anchor="middle" fill="#ffcc44" font-size="13" font-weight="bold">18V</text>
+    <text x="82"  y="126" text-anchor="middle" fill="#ff4444" font-size="9">+ POS</text>
+    <text x="172" y="126" text-anchor="middle" fill="#6688ff" font-size="9">− NEG</text>
+    <circle cx="82"  cy="134" r="5" fill="#ff4444" stroke="#ff8888" stroke-width="1.5"/>
+    <circle cx="172" cy="134" r="5" fill="#4466dd" stroke="#8899ff" stroke-width="1.5"/>
+  </g>
+
+  <!-- Battery 2 (top right) -->
+  <g id="bat2">
+    <rect x="715" y="62" width="155" height="72" rx="6" fill="#1a2440" stroke="#ff6b35" stroke-width="2"/>
+    <rect x="715" y="62" width="155" height="20" rx="6" fill="#ff6b35" opacity="0.25"/>
+    <text x="792" y="76"  text-anchor="middle" fill="#ff9955" font-size="9"  font-weight="bold">BATTERY 2</text>
+    <text x="792" y="93"  text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold">Bosch ProCore</text>
+    <text x="792" y="108" text-anchor="middle" fill="#ffcc44" font-size="13" font-weight="bold">18V</text>
+    <text x="747" y="126" text-anchor="middle" fill="#ff4444" font-size="9">+ POS</text>
+    <text x="837" y="126" text-anchor="middle" fill="#6688ff" font-size="9">− NEG</text>
+    <circle cx="747" cy="134" r="5" fill="#ff4444" stroke="#ff8888" stroke-width="1.5"/>
+    <circle cx="837" cy="134" r="5" fill="#4466dd" stroke="#8899ff" stroke-width="1.5"/>
+  </g>
+
+  <!-- ═══ FUSES on battery POS lines ═══ -->
+  <!-- F1 on Bat1 POS -->
+  <line x1="82" y1="139" x2="82" y2="158" stroke="#ff8833" stroke-width="2.5"/>
+  <rect x="69" y="158" width="26" height="14" rx="3" fill="#2a1a00" stroke="#ffaa00" stroke-width="1.5"/>
+  <text x="82" y="169" text-anchor="middle" fill="#ffcc44" font-size="8" font-weight="bold">10A</text>
+  <line x1="82" y1="172" x2="82" y2="190" stroke="#ff8833" stroke-width="2.5"/>
+
+  <!-- F2 on Bat2 POS -->
+  <line x1="747" y1="139" x2="747" y2="158" stroke="#ff8833" stroke-width="2.5"/>
+  <rect x="734" y="158" width="26" height="14" rx="3" fill="#2a1a00" stroke="#ffaa00" stroke-width="1.5"/>
+  <text x="747" y="169" text-anchor="middle" fill="#ffcc44" font-size="8" font-weight="bold">10A</text>
+  <line x1="747" y1="172" x2="747" y2="190" stroke="#ff8833" stroke-width="2.5"/>
+
+  <!-- ═══ SERIES LINK: Bat1 NEG (172) → Bat2 POS (747) at y=155 ═══ -->
+  <polyline points="172,139 172,155 747,155 747,158" fill="none" stroke="#4466dd" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="460" y="151" text-anchor="middle" fill="#8899ff" font-size="8">SERIES LINK  (Bat1 NEG → Bat2 POS)  →  36V</text>
+
+  <!-- ═══ 36V BUS at y=195  (Bat1 POS left node → Bat2 NEG right node) ═══ -->
+  <!-- Bat1 POS node -->
+  <line x1="82" y1="190" x2="82" y2="210" stroke="#ff8833" stroke-width="2.5"/>
+  <circle cx="82" cy="210" r="5" fill="#ff3333" stroke="#ff7777" stroke-width="1.5"/>
+  <!-- Bat2 NEG down to 36V bus -->
+  <line x1="837" y1="139" x2="837" y2="210" stroke="#4466dd" stroke-width="2.5"/>
+  <circle cx="837" cy="210" r="4" fill="#4466dd"/>
+  <!-- 36V horizontal bus -->
+  <line x1="82" y1="210" x2="837" y2="210" stroke="#ff3333" stroke-width="3.5"/>
+  <rect x="418" y="202" width="45" height="16" rx="3" fill="#3a0000" stroke="#ff4444" stroke-width="1"/>
+  <text x="440" y="214" text-anchor="middle" fill="#ff6666" font-size="9" font-weight="bold">36V RAIL</text>
+
+  <!-- Bat2 NEG label -->
+  <text x="845" y="175" fill="#6688ff" font-size="8">GND</text>
+
+  <!-- ═══ SCHOTTKY DIODES + SHARED 18V BUS ═══ -->
+
+  <!-- D1: Bat1 POS (82) down through diode to 18V bus at y=262 -->
+  <!-- Bat1 POS junction to diode anode -->
+  <line x1="82" y1="210" x2="82" y2="232" stroke="#ff8833" stroke-width="2.5"/>
+  <!-- Diode D1 body (anode top, cathode bottom, current flows down) -->
+  <polygon points="70,232 94,232 82,252" fill="#ff8833" stroke="#ffcc88" stroke-width="1"/>
+  <line x1="68" y1="252" x2="96" y2="252" stroke="#ffcc88" stroke-width="2.5"/>
+  <!-- Label -->
+  <text x="100" y="245" fill="#ffcc88" font-size="9" font-weight="bold">D1</text>
+  <text x="100" y="256" fill="#aaa" font-size="8">SS34</text>
+  <!-- Wire from D1 cathode to 18V bus -->
+  <line x1="82" y1="252" x2="82" y2="272" stroke="#ff8833" stroke-width="2.5"/>
+
+  <!-- D2: Bat2 POS (747) down through diode to 18V bus -->
+  <line x1="747" y1="210" x2="747" y2="232" stroke="#ff8833" stroke-width="2.5"/>
+  <!-- Diode D2 body -->
+  <polygon points="735,232 759,232 747,252" fill="#ff8833" stroke="#ffcc88" stroke-width="1"/>
+  <line x1="733" y1="252" x2="761" y2="252" stroke="#ffcc88" stroke-width="2.5"/>
+  <!-- Label -->
+  <text x="765" y="245" fill="#ffcc88" font-size="9" font-weight="bold">D2</text>
+  <text x="765" y="256" fill="#aaa" font-size="8">SS34</text>
+  <!-- Wire from D2 cathode to 18V bus -->
+  <line x1="747" y1="252" x2="747" y2="272" stroke="#ff8833" stroke-width="2.5"/>
+
+  <!-- Shared 18V bus horizontal at y=272 -->
+  <line x1="82" y1="272" x2="747" y2="272" stroke="#ff8833" stroke-width="3"/>
+  <circle cx="82"  cy="272" r="5" fill="#ff8833" stroke="#ffcc66" stroke-width="1.5"/>
+  <circle cx="747" cy="272" r="5" fill="#ff8833" stroke="#ffcc66" stroke-width="1.5"/>
+  <rect x="400" y="263" width="60" height="16" rx="3" fill="#2a1500" stroke="#ff8833" stroke-width="1"/>
+  <text x="430" y="275" text-anchor="middle" fill="#ffaa44" font-size="9" font-weight="bold">18V SHARED</text>
+
+  <!-- ═══ POLOLU REGULATORS (both from shared 18V bus) ═══ -->
+
+  <!-- Pololu 1 (left — PTU rail) -->
+  <line x1="200" y1="272" x2="200" y2="305" stroke="#ff8833" stroke-width="2.5" marker-end="none"/>
+  <circle cx="200" cy="272" r="4" fill="#ff8833"/>
+  <g id="pol1">
+    <rect x="120" y="305" width="160" height="65" rx="5" fill="#0f1e35" stroke="#44aaff" stroke-width="1.5"/>
+    <rect x="120" y="305" width="160" height="18" rx="5" fill="#44aaff" opacity="0.2"/>
+    <text x="200" y="318" text-anchor="middle" fill="#44ccff" font-size="9"  font-weight="bold">POLOLU D36V50F12 #1</text>
+    <text x="200" y="334" text-anchor="middle" fill="#ffffff" font-size="10">Step-Down Reg</text>
+    <text x="200" y="349" text-anchor="middle" fill="#ffdd44" font-size="11" font-weight="bold">18V → 12V / 4.5A</text>
+    <text x="200" y="362" text-anchor="middle" fill="#bb88ff" font-size="8">PTU rail</text>
+  </g>
+  <!-- 18V in wire to Pololu1 -->
+  <line x1="200" y1="272" x2="200" y2="305" stroke="#ff8833" stroke-width="2"/>
+
+  <!-- Pololu 2 (right — Jetson rail) -->
+  <line x1="620" y1="272" x2="620" y2="305" stroke="#ff8833" stroke-width="2"/>
+  <circle cx="620" cy="272" r="4" fill="#ff8833"/>
+  <g id="pol2">
+    <rect x="540" y="305" width="160" height="65" rx="5" fill="#0f1e35" stroke="#44aaff" stroke-width="1.5"/>
+    <rect x="540" y="305" width="160" height="18" rx="5" fill="#44aaff" opacity="0.2"/>
+    <text x="620" y="318" text-anchor="middle" fill="#44ccff" font-size="9"  font-weight="bold">POLOLU D36V50F12 #2</text>
+    <text x="620" y="334" text-anchor="middle" fill="#ffffff" font-size="10">Step-Down Reg</text>
+    <text x="620" y="349" text-anchor="middle" fill="#ffdd44" font-size="11" font-weight="bold">18V → 12V / 4.5A</text>
+    <text x="620" y="362" text-anchor="middle" fill="#66ff66" font-size="8">Jetson rail</text>
+  </g>
+
+  <!-- ═══ 5V BUCK from shared 18V bus ═══ -->
+  <line x1="430" y1="272" x2="430" y2="305" stroke="#ff8833" stroke-width="2"/>
+  <circle cx="430" cy="272" r="4" fill="#ff8833"/>
+  <g id="buck5v">
+    <rect x="355" y="305" width="150" height="65" rx="5" fill="#0a1f1a" stroke="#44ffaa" stroke-width="1.5"/>
+    <rect x="355" y="305" width="150" height="18" rx="5" fill="#44ffaa" opacity="0.2"/>
+    <text x="430" y="318" text-anchor="middle" fill="#66ffcc" font-size="9"  font-weight="bold">5V BUCK  3A</text>
+    <text x="430" y="334" text-anchor="middle" fill="#ffffff" font-size="10">18V → 5V / 3A</text>
+    <text x="430" y="349" text-anchor="middle" fill="#44ff88" font-size="11" font-weight="bold">5V logic rail</text>
+    <text x="430" y="362" text-anchor="middle" fill="#aaaaaa" font-size="8">9–36V rated input</text>
+  </g>
+
+  <!-- ═══ 12V LOADS ═══ -->
+
+  <!-- PTU from Pololu 1 -->
+  <line x1="200" y1="370" x2="200" y2="415" stroke="#ddcc00" stroke-width="2.5"/>
+  <g id="ptu">
+    <rect x="120" y="415" width="160" height="65" rx="5" fill="#1a1020" stroke="#bb44ff" stroke-width="1.5"/>
+    <rect x="120" y="415" width="160" height="18" rx="5" fill="#bb44ff" opacity="0.2"/>
+    <text x="200" y="429" text-anchor="middle" fill="#dd88ff" font-size="9"  font-weight="bold">PTU MOTORS</text>
+    <text x="200" y="445" text-anchor="middle" fill="#ffffff" font-size="9">Pan + Tilt NEMA 17</text>
+    <text x="200" y="460" text-anchor="middle" fill="#ffdd44" font-size="10" font-weight="bold">12V · ~2A peak</text>
+    <text x="200" y="472" text-anchor="middle" fill="#aaaaaa" font-size="8">Stepper drivers</text>
+  </g>
+  <text x="160" y="398" fill="#ffee44" font-size="9">12V</text>
+
+  <!-- Jetson from Pololu 2 -->
+  <line x1="620" y1="370" x2="620" y2="415" stroke="#ddcc00" stroke-width="2.5"/>
+  <g id="jetson">
+    <rect x="540" y="415" width="160" height="65" rx="5" fill="#0d2010" stroke="#44dd44" stroke-width="1.5"/>
+    <rect x="540" y="415" width="160" height="18" rx="5" fill="#44dd44" opacity="0.2"/>
+    <text x="620" y="429" text-anchor="middle" fill="#66ff66" font-size="9"  font-weight="bold">JETSON ORIN SUPER</text>
+    <text x="620" y="445" text-anchor="middle" fill="#ffffff" font-size="9">12V barrel jack</text>
+    <text x="620" y="460" text-anchor="middle" fill="#ffdd44" font-size="10" font-weight="bold">12V · 15–65W</text>
+    <text x="620" y="472" text-anchor="middle" fill="#aaaaaa" font-size="8">192.168.1.167</text>
+  </g>
+  <text x="628" y="398" fill="#ffee44" font-size="9">12V</text>
+
+  <!-- Teensys from 5V buck -->
+  <line x1="430" y1="370" x2="430" y2="487" stroke="#44ff88" stroke-width="2.5"/>
+  <g id="teensy">
+    <rect x="340" y="487" width="195" height="60" rx="5" fill="#0a1a14" stroke="#44ffaa" stroke-width="1.5"/>
+    <rect x="340" y="487" width="195" height="17" rx="5" fill="#44ffaa" opacity="0.2"/>
+    <text x="437" y="500" text-anchor="middle" fill="#66ffcc" font-size="9"  font-weight="bold">TEENSYS + SENSORS</text>
+    <text x="437" y="516" text-anchor="middle" fill="#ffffff" font-size="9">Control 4.1 · Sensor 4.1</text>
+    <text x="437" y="530" text-anchor="middle" fill="#44ff88" font-size="10" font-weight="bold">5V · IMU · GPS · TOF · Enc</text>
+  </g>
+  <text x="437" y="483" fill="#44ff88" font-size="8" text-anchor="middle">5V</text>
+
+  <!-- ═══ 36V RAIL → 20A FUSE → TB6600s ═══ -->
+  <!-- 36V tap down from bus -->
+  <line x1="460" y1="210" x2="460" y2="450" stroke="#ff3333" stroke-width="3"/>
+  <circle cx="460" cy="210" r="5" fill="#ff3333" stroke="#ff7777" stroke-width="1.5"/>
+  <!-- F3 fuse at y=434 -->
+  <rect x="447" y="434" width="26" height="16" rx="3" fill="#2a0000" stroke="#ff4444" stroke-width="1.5"/>
+  <text x="460" y="445" text-anchor="middle" fill="#ff8888" font-size="8" font-weight="bold">20A</text>
+  <!-- split to left and right -->
+  <circle cx="460" cy="450" r="5" fill="#ff3333" stroke="#ff7777" stroke-width="1.5"/>
+  <polyline points="460,450 110,450 110,487" fill="none" stroke="#ff3333" stroke-width="2.5"/>
+  <polyline points="460,450 810,450 810,487" fill="none" stroke="#ff3333" stroke-width="2.5"/>
+  <text x="270" y="446" text-anchor="middle" fill="#ff6666" font-size="8">36V</text>
+  <text x="650" y="446" text-anchor="middle" fill="#ff6666" font-size="8">36V</text>
+
+  <!-- Left TB6600 -->
+  <g id="tb6600l">
+    <rect x="35" y="487" width="150" height="63" rx="5" fill="#1a1a2e" stroke="#ff3333" stroke-width="1.5"/>
+    <rect x="35" y="487" width="150" height="17" rx="5" fill="#ff3333" opacity="0.2"/>
+    <text x="110" y="500" text-anchor="middle" fill="#ff6666" font-size="9"  font-weight="bold">LEFT TB6600</text>
+    <text x="110" y="516" text-anchor="middle" fill="#ffffff" font-size="9">Stepper Driver  4A</text>
+    <text x="110" y="531" text-anchor="middle" fill="#aaaaaa" font-size="8">NEMA 23 left track</text>
+    <text x="110" y="543" text-anchor="middle" fill="#ff4444" font-size="8">9–42V in</text>
+  </g>
+
+  <!-- Right TB6600 -->
+  <g id="tb6600r">
+    <rect x="735" y="487" width="150" height="63" rx="5" fill="#1a1a2e" stroke="#ff3333" stroke-width="1.5"/>
+    <rect x="735" y="487" width="150" height="17" rx="5" fill="#ff3333" opacity="0.2"/>
+    <text x="810" y="500" text-anchor="middle" fill="#ff6666" font-size="9"  font-weight="bold">RIGHT TB6600</text>
+    <text x="810" y="516" text-anchor="middle" fill="#ffffff" font-size="9">Stepper Driver  4A</text>
+    <text x="810" y="531" text-anchor="middle" fill="#aaaaaa" font-size="8">NEMA 23 right track</text>
+    <text x="810" y="543" text-anchor="middle" fill="#ff4444" font-size="8">9–42V in</text>
+  </g>
+
+  <!-- ═══ GND RAIL + RETURNS ═══ -->
+  <line x1="35" y1="590" x2="885" y2="590" stroke="#222244" stroke-width="2.5"/>
+  <text x="880" y="593" fill="#6688aa" font-size="8">GND</text>
+
+  <!-- GND drop wires (dashed) -->
+  <line x1="837" y1="210" x2="837" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <line x1="145" y1="370" x2="145" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <circle cx="145" cy="370" r="3" fill="#334466"/>
+  <line x1="655" y1="370" x2="655" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <circle cx="655" cy="370" r="3" fill="#334466"/>
+  <line x1="405" y1="370" x2="405" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <circle cx="405" cy="370" r="3" fill="#334466"/>
+  <line x1="110" y1="550" x2="110" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <line x1="810" y1="550" x2="810" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <line x1="460" y1="547" x2="460" y2="590" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/>
+
+  <!-- GND labels -->
+  <text x="320" y="586" fill="#334466" font-size="8">GND  (all commons tied)</text>
+
+  <!-- ═══ LEGEND ═══ -->
+  <rect x="10" y="600" width="500" height="30" rx="4" fill="#0d1228" stroke="#2a3560" stroke-width="1"/>
+  <text x="255" y="611" text-anchor="middle" fill="#8899cc" font-size="8" font-weight="bold">WIRE LEGEND</text>
+  <line x1="18"  y1="622" x2="42"  y2="622" stroke="#ff3333" stroke-width="3"/>   <text x="47"  y="625" fill="#ff6666" font-size="8">36V  series rail</text>
+  <line x1="118" y1="622" x2="142" y2="622" stroke="#ff8833" stroke-width="2.5"/> <text x="147" y="625" fill="#ffaa44" font-size="8">18V  shared bus</text>
+  <line x1="228" y1="622" x2="252" y2="622" stroke="#ddcc00" stroke-width="2.5"/> <text x="257" y="625" fill="#ffee44" font-size="8">12V  regulated</text>
+  <line x1="338" y1="622" x2="362" y2="622" stroke="#44ff88" stroke-width="2.5"/> <text x="367" y="625" fill="#44ff88" font-size="8">5V  logic</text>
+  <line x1="418" y1="622" x2="442" y2="622" stroke="#334466" stroke-width="1.5" stroke-dasharray="3,3"/> <text x="447" y="625" fill="#6688aa" font-size="8">GND return</text>
+
+  <!-- ═══ NOTES ═══ -->
+  <rect x="520" y="600" width="390" height="30" rx="4" fill="#0d1228" stroke="#2a3560" stroke-width="1"/>
+  <text x="715" y="611" text-anchor="middle" fill="#8899cc" font-size="8" font-weight="bold">NOTES</text>
+  <text x="528" y="622" fill="#667788" font-size="8">D1/D2 SS34 Schottky (3A, 40V) prevent cross-charging · 18V load shared ~50/50 between packs</text>
+
+</svg>

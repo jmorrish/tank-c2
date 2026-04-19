@@ -1,5 +1,7 @@
 const express = require('express');
 const session = require('express-session');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { WebSocketServer } = require('ws');
 const net = require('net');
 const path = require('path');
@@ -18,8 +20,12 @@ const JETSON_PORT  = parseInt(process.env.JETSON_PORT  || '9999');
 const MJPEG_PORT   = parseInt(process.env.MJPEG_PORT   || '8080');
 const WEB_PORT     = parseInt(process.env.PORT         || '3000');
 const MISSIONS_DIR = path.join(__dirname, 'missions');
-const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'changeme';
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD;
+if (!AUTH_PASSWORD) { console.error('FATAL: AUTH_PASSWORD env var not set'); process.exit(1); }
+const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
+    console.warn('[WARN] SESSION_SECRET not set — sessions invalidated on restart. Set SESSION_SECRET env var.');
+    return crypto.randomBytes(32).toString('hex');
+})();
 
 if (!fs.existsSync(MISSIONS_DIR)) fs.mkdirSync(MISSIONS_DIR, { recursive: true });
 
@@ -27,12 +33,39 @@ const app    = express();
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ noServer: true });
 
+app.set('trust proxy', 1); // trust nginx — required for rate limiter IP detection
+
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc:     ["'self'"],
+            scriptSrc:      ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "https://www.gstatic.com"],
+            styleSrc:       ["'self'", "'unsafe-inline'"],
+            imgSrc:         ["'self'", "data:", "blob:",
+                             "https://*.tile.openstreetmap.org",   // Leaflet OSM tiles
+                             "https://server.arcgisonline.com"],   // Leaflet satellite tiles
+            connectSrc:     ["'self'", "wss:", "blob:",
+                             "https://www.gstatic.com",            // Draco WASM fetch
+                             "https://ipapi.co"],                  // IP geolocation fallback
+            mediaSrc:       ["'self'", "blob:"],
+            workerSrc:      ["'self'", "blob:", "https://www.gstatic.com"],
+            objectSrc:      ["'none'"],
+            frameAncestors: ["'self'"],   // allow same-origin iframe (docs tab); blocks external embedding
+            formAction:     ["'self'"],
+            baseUri:        ["'self'"],
+            scriptSrcAttr:  ["'unsafe-inline'"],  // allow onclick/onload attrs
+        }
+    },
+    crossOriginEmbedderPolicy: false,  // model-viewer requires this disabled
+    permissionsPolicy: false,          // don't block geolocation (map uses navigator.geolocation)
+}));
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 }
+    cookie: { httpOnly: true, sameSite: 'strict', secure: true, maxAge: 4 * 60 * 60 * 1000 }
 }));
 
 // Short-lived tokens for WebSocket auth (browser requests one via HTTP then
@@ -61,10 +94,20 @@ function requireAuth(req, res, next) {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
+// ── Rate limiters ─────────────────────────────────────────────────────────────
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,  // 15-minute window
+    max: 10,                    // 10 attempts per IP per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    handler: (_req, res) => res.redirect('/login?err=limit'),
+});
+
 // Login / logout routes (before static middleware so they aren't blocked)
 app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'login.html')));
 
-app.post('/login', (req, res) => {
+app.post('/login', loginLimiter, (req, res) => {
     if (req.body.password === AUTH_PASSWORD) {
         req.session.authed = true;
         return res.redirect('/');
@@ -83,6 +126,7 @@ app.get('/api/ws-token', requireAuth, (_req, res) => {
 
 // Protect all other routes
 app.use(requireAuth);
+app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── MJPEG relay (one upstream connection → fan-out to all viewers) ───────────
@@ -500,10 +544,9 @@ wss.on('connection', (ws) => {
     ws.on('message', (raw) => {
         try {
             const { cmd } = JSON.parse(raw);
-            if (cmd) {
+            if (typeof cmd === 'string' && cmd.length > 0 && cmd.length <= 256) {
                 const ok = sendToJetson(cmd);
                 ws.send(JSON.stringify({ type: 'ack', cmd, ok }));
-                console.log(`[cmd] ${ok ? 'sent' : 'QUEUED'}: ${cmd.slice(0, 80)}`);
             }
         } catch (e) { console.warn('[ws] message parse error:', e.message); }
     });
@@ -529,7 +572,7 @@ app.get('/api/missions', (_req, res) => {
             .filter(Boolean)
             .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
         res.json(list);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error('[api] missions list:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Return the last saved mission state from the Jetson's status (if available).
@@ -559,7 +602,7 @@ app.post('/api/missions', (req, res) => {
         mission.updated = new Date().toISOString();
         fs.writeFileSync(missionFile(mission.id), JSON.stringify(mission, null, 2));
         res.json({ ok: true, id: mission.id });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error('[api] mission save:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 app.put('/api/missions/:id', (req, res) => {
@@ -567,7 +610,7 @@ app.put('/api/missions/:id', (req, res) => {
         const mission = { ...req.body, id: req.params.id, updated: new Date().toISOString() };
         fs.writeFileSync(missionFile(req.params.id), JSON.stringify(mission, null, 2));
         res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error('[api] mission update:', e.message); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 app.delete('/api/missions/:id', (req, res) => {
@@ -665,7 +708,7 @@ app.post('/api/route', async (req, res) => {
         res.json({ points: final, distance: data.routes[0].distance, duration: data.routes[0].duration });
     } catch (err) {
         console.error('[route]', err.message);
-        res.status(502).json({ error: err.message });
+        res.status(502).json({ error: 'Routing service error' });
     }
 });
 
@@ -685,6 +728,53 @@ app.post('/api/missions/abort', (_req, res) => {
         console.warn('[jetson] Abort queued — will send on reconnect');
     }
     res.json({ ok, queued: !ok });
+});
+
+// ── Layout API (dashboard widget layouts) ─────────────────────────────────────
+const LAYOUTS_DIR = path.join(__dirname, 'layouts');
+if (!fs.existsSync(LAYOUTS_DIR)) fs.mkdirSync(LAYOUTS_DIR, { recursive: true });
+
+function layoutFile(name) {
+    return path.join(LAYOUTS_DIR, name.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
+}
+
+app.get('/api/layouts', (_req, res) => {
+    try {
+        const list = fs.readdirSync(LAYOUTS_DIR)
+            .filter(f => f.endsWith('.json'))
+            .map(f => {
+                try {
+                    const d = JSON.parse(fs.readFileSync(path.join(LAYOUTS_DIR, f)));
+                    return { name: d.name, created: d.created, updated: d.updated, widgetCount: (d.widgets || []).length };
+                } catch { return null; }
+            })
+            .filter(Boolean)
+            .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+        res.json(list);
+    } catch (e) { console.error('[api] layouts list:', e.message); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+app.get('/api/layouts/:name', (req, res) => {
+    const fp = layoutFile(req.params.name);
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+    res.json(JSON.parse(fs.readFileSync(fp)));
+});
+
+app.put('/api/layouts/:name', (req, res) => {
+    try {
+        const layout = req.body;
+        layout.name = req.params.name;
+        if (!layout.created) layout.created = new Date().toISOString();
+        layout.updated = new Date().toISOString();
+        fs.writeFileSync(layoutFile(req.params.name), JSON.stringify(layout, null, 2));
+        res.json({ ok: true });
+    } catch (e) { console.error('[api] layout save:', e.message); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+app.delete('/api/layouts/:name', (req, res) => {
+    const fp = layoutFile(req.params.name);
+    if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    res.json({ ok: true });
 });
 
 // ── WebSocket upgrade — authenticate via one-time token ───────────────────────

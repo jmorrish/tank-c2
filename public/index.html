@@ -3,258 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tank C2 — Buzzgeef</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
-  integrity="sha384-BSxuMLxX+FCbTdYec3TbXlnMGEEM2QXTFdtDaveen71o+jswm2J36+xFqp8k4VHM" crossorigin="anonymous"></script>
-<style>
-:root {
-  --bg:    #0a0e1a; --panel: #111827; --border: #1f2937;
-  --accent:#00e676; --blue:  #00b0ff; --warn:   #ffab00;
-  --danger:#ff1744; --purple:#b47ffe; --text:   #e2e8f0;
-  --muted: #64748b; --r:     5px;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-
-/* Header */
-header{display:flex;align-items:center;gap:12px;padding:0 14px;height:46px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;z-index:200}
-.logo{font-size:15px;font-weight:bold;letter-spacing:3px;color:var(--accent)}
-.conn-badge{display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:11px;letter-spacing:1px;border:1px solid var(--danger);background:rgba(255,23,68,.08);color:var(--danger);transition:all .3s}
-.conn-badge.on{border-color:var(--accent);background:rgba(0,230,118,.08);color:var(--accent)}
-.conn-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:blink 2s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-.tabs{display:flex;gap:3px;margin-left:auto}
-.tab-btn{background:none;border:1px solid transparent;color:var(--muted);padding:5px 14px;cursor:pointer;border-radius:var(--r);font:inherit;font-size:11px;letter-spacing:1px;transition:all .2s}
-.tab-btn:hover{color:var(--text);border-color:var(--border)}
-.tab-btn.active{color:var(--accent);border-color:var(--accent);background:rgba(0,230,118,.07)}
-
-/* Mission banner */
-.mbanner{display:none;align-items:center;justify-content:space-between;padding:7px 14px;background:rgba(0,230,118,.08);border-bottom:1px solid var(--accent);flex-shrink:0;transition:all .3s}
-.mbanner.show{display:flex}
-.mbanner.fault{background:rgba(255,171,0,.1);border-bottom-color:var(--warn)}
-.mbanner.pending{background:rgba(255,23,68,.08);border-bottom-color:var(--danger)}
-.mbdot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blink 1s infinite}
-.mbanner.fault .mbdot{background:var(--warn)}
-.mbanner.pending .mbdot{background:var(--danger)}
-.mbinfo{display:flex;align-items:center;gap:8px;color:var(--accent);font-size:12px;letter-spacing:1px}
-.mbanner.fault .mbinfo{color:var(--warn)}
-.mbanner.pending .mbinfo{color:var(--danger)}
-
-/* Tabs */
-.tab-pane{display:none;flex:1;overflow:hidden}
-.tab-pane.active{display:flex;flex-direction:column}
-
-/* Shared */
-.btn{padding:8px 14px;border-radius:var(--r);border:1px solid;cursor:pointer;font:inherit;font-size:11px;letter-spacing:1px;transition:all .2s;text-transform:uppercase;white-space:nowrap}
-.btn-accent{background:rgba(0,230,118,.1);border-color:var(--accent);color:var(--accent)}.btn-accent:hover{background:var(--accent);color:var(--bg)}
-.btn-blue  {background:rgba(0,176,255,.1);border-color:var(--blue);color:var(--blue)}.btn-blue:hover{background:var(--blue);color:var(--bg)}
-.btn-warn  {background:rgba(255,171,0,.1);border-color:var(--warn);color:var(--warn)}.btn-warn:hover{background:var(--warn);color:var(--bg)}
-.btn-danger{background:rgba(255,23,68,.1);border-color:var(--danger);color:var(--danger)}.btn-danger:hover{background:var(--danger);color:#fff}
-.btn-muted {background:rgba(100,116,139,.1);border-color:var(--muted);color:var(--muted)}.btn-muted:hover{background:var(--muted);color:var(--bg)}
-.btn-purple{background:rgba(180,127,254,.1);border-color:var(--purple);color:var(--purple)}.btn-purple:hover{background:var(--purple);color:var(--bg)}
-.btn-sm{padding:4px 9px;font-size:10px}
-input[type=text],input[type=number],select,textarea{background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:var(--r);font:inherit;font-size:12px;width:100%}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
-input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
-input[type=range]{flex:1;accent-color:var(--accent)}
-::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-
-/* ── DASHBOARD ── */
-#tab-dashboard{flex-direction:column;overflow-y:auto;padding:12px;gap:12px}
-.tele-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;flex-shrink:0}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
-.card.stale{border-color:var(--warn)}.card.stale .tv{color:var(--warn)}
-.card-title{font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:10px}
-.card-row{display:flex;justify-content:space-between;margin-bottom:5px}
-.card-label{color:var(--muted)}
-.tv{color:var(--accent);font-weight:bold}
-.dist-big{text-align:center;padding:8px 0}.dist-big span{font-size:38px;color:var(--accent);font-weight:bold}.dist-big small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
-.ctrl-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;flex-shrink:0}
-.ctrl-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:14px}
-.ctrl-title{font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:14px}
-.dpad,.ptupad{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px);gap:4px;justify-content:center}
-.dpad button,.ptupad button{background:#151c2c;border:1px solid var(--border);color:var(--text);border-radius:var(--r);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .12s}
-.dpad button.sc{font-size:10px;letter-spacing:1px;color:var(--danger);border-color:var(--danger);background:rgba(255,23,68,.08)}
-.dpad button:active,.dpad button.held,.ptupad button:active,.ptupad button.held{background:var(--accent);color:var(--bg);border-color:var(--accent)}
-.dpad button.sc:active,.dpad button.sc.held{background:var(--danger);color:#fff}
-.ptupad button{color:var(--blue);border-color:rgba(0,176,255,.3)}.ptupad button:active,.ptupad button.held{background:var(--blue);color:var(--bg)}
-.ptupad .cb{color:var(--muted);font-size:10px;border-color:var(--border)}
-.srow{display:flex;align-items:center;gap:8px;margin-top:10px}.srow label{color:var(--muted);font-size:11px;white-space:nowrap;min-width:56px}.sv{min-width:34px;text-align:right;color:var(--accent);font-size:11px}
-.abtn{display:flex;flex-direction:column;gap:8px}.abtn .btn{width:100%}
-.kbhint{font-size:10px;color:var(--muted);line-height:1.6;margin-top:8px}
-
-/* ── TARGET GALLERY ── */
-.tg-grid{display:flex;flex-wrap:wrap;gap:10px;min-height:20px}
-.tg-card{background:#0d1117;border:1px solid var(--border);border-radius:var(--r);padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;width:90px;cursor:pointer;transition:border-color .2s}
-.tg-card:hover{border-color:var(--blue)}
-.tg-card.active-target{border-color:var(--accent);box-shadow:0 0 8px rgba(0,230,118,.25)}
-.tg-thumb{width:74px;height:100px;object-fit:cover;border-radius:3px;background:#111}
-.tg-label{font-size:10px;letter-spacing:1px;color:var(--muted);text-align:center;cursor:text;padding:1px 3px;border-radius:3px;border:1px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:74px}
-.tg-label:hover{border-color:var(--border);color:var(--text)}
-.tg-card.active-target .tg-label{color:var(--accent)}
-.tg-follow{padding:3px 8px;font-size:9px;letter-spacing:1px;border-radius:3px;border:1px solid var(--blue);background:rgba(0,176,255,.1);color:var(--blue);cursor:pointer;font-family:inherit;transition:all .15s;width:100%}
-.tg-follow:hover,.tg-card.active-target .tg-follow{background:var(--blue);color:var(--bg)}
-.tg-card.active-target .tg-follow{border-color:var(--accent);background:rgba(0,230,118,.15);color:var(--accent)}
-.tg-card.active-target .tg-follow:hover{background:var(--accent);color:var(--bg)}
-.tg-learn{padding:3px 8px;font-size:9px;letter-spacing:1px;border-radius:3px;border:1px solid #9c6fff;background:rgba(156,111,255,.1);color:#9c6fff;cursor:pointer;font-family:inherit;transition:all .15s;width:100%;margin-top:2px}
-.tg-learn:hover{background:#9c6fff;color:var(--bg)}
-.tg-learn.learning{border-color:#ff9800;color:#ff9800;background:rgba(255,152,0,.1)}
-.tg-learn-prog{font-size:9px;color:#ff9800;text-align:center;letter-spacing:1px;display:none;padding:1px 0}
-@keyframes tg-pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.tg-desc{font-size:9px;color:var(--muted);line-height:1.4;text-align:left;padding:5px 2px 2px;border-top:1px solid var(--border);margin-top:4px;display:none;word-break:break-word;white-space:normal;max-width:160px}
-.tg-card.has-desc{width:auto;min-width:90px;max-width:170px}
-.tg-prof{font-size:9px;letter-spacing:1px;text-align:center;padding:1px 0}
-.tg-prof[data-level="0"]{color:#555}
-.tg-prof[data-level="1"]{color:#ff9800}
-.tg-prof[data-level="2"]{color:#4caf50}
-
-/* ── MISSION PLANNER ── */
-#tab-planner{flex-direction:row}
-.pp{width:310px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-.psec{padding:11px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
-.psec-title{font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:9px}
-.frow{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}.frow label{font-size:11px;color:var(--muted)}
-.fi{display:flex;gap:14px;align-items:center}.fi label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer}
-.wphdr{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
-.wphdr span{font-size:10px;letter-spacing:2px;color:var(--muted)}
-.wpscroll{flex:1;overflow-y:auto;min-height:0}
-.wp-item{display:flex;align-items:center;gap:7px;padding:7px 10px;border-bottom:1px solid #0a0f1a;cursor:pointer;transition:background .13s;user-select:none}
-.wp-item:hover{background:rgba(255,255,255,.03)}.wp-item.sel{background:rgba(0,230,118,.06);border-left:2px solid var(--accent);padding-left:8px}
-.wph{color:var(--muted);cursor:grab;font-size:16px;line-height:1}.wph:active{cursor:grabbing}
-.wpn{width:21px;height:21px;border-radius:50%;background:var(--accent);color:var(--bg);font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.wpname{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge{font-size:9px;letter-spacing:1px;padding:2px 6px;border-radius:3px;flex-shrink:0}
-.bm{background:rgba(0,176,255,.15);color:var(--blue)}.bw{background:rgba(255,171,0,.15);color:var(--warn)}
-.bs{background:rgba(0,230,118,.15);color:var(--accent)}.bf{background:rgba(255,23,68,.15);color:var(--danger)}
-.bp{background:rgba(255,255,255,.1);color:var(--text)}.bc{background:rgba(180,127,254,.15);color:var(--purple)}
-.wpdel{background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 4px;border-radius:3px;font-size:13px;line-height:1}.wpdel:hover{color:var(--danger)}
-.wpempty{padding:18px 12px;color:var(--muted);font-size:11px;text-align:center;line-height:1.7}
-.wped{padding:11px 12px;border-top:1px solid var(--border);background:rgba(0,0,0,.2);flex-shrink:0;max-height:340px;overflow-y:auto}
-.wped.hidden{display:none}
-.wpedtitle{font-size:10px;letter-spacing:2px;color:var(--blue);margin-bottom:9px}
-.i2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.af{display:none}.af.show{display:block}
-.pfooter{padding:9px 12px;border-top:1px solid var(--border);display:flex;gap:7px;flex-shrink:0}
-.pfooter .btn{flex:1;padding:7px;font-size:11px}
-
-/* Map */
-.mapwrap{flex:1;position:relative;min-width:0}
-#map{width:100%;height:100%}
-.mo{position:absolute;z-index:1000;pointer-events:none}
-.mo.click{pointer-events:auto}
-.modebadge{top:10px;left:10px;background:rgba(0,230,118,.15);border:1px solid var(--accent);color:var(--accent);border-radius:var(--r);padding:5px 10px;font-size:11px;letter-spacing:1px}
-.modebadge.hidden{display:none}
-.maptb{top:10px;right:10px;display:flex;flex-direction:column;gap:4px;pointer-events:auto}
-.maptb .btn{padding:5px 10px;font-size:10px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-.mapcoords{bottom:10px;left:10px;background:rgba(10,14,26,.85);border:1px solid var(--border);border-radius:var(--r);padding:5px 9px;font-size:11px;color:var(--muted)}
-.userdist{bottom:10px;right:10px;background:rgba(10,14,26,.85);border:1px solid var(--blue);border-radius:var(--r);padding:5px 9px;font-size:11px;color:var(--blue);display:none}
-.user-tip.leaflet-tooltip{background:rgba(0,176,255,.15);border:1px solid var(--blue);color:var(--blue);font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;padding:2px 7px;border-radius:3px}
-.leaflet-container{background:#131a2b}
-.leaflet-control-zoom a{background:var(--panel)!important;border-color:var(--border)!important;color:var(--text)!important}
-.leaflet-control-zoom a:hover{background:var(--border)!important}
-.leaflet-control-attribution{background:rgba(10,14,26,.8)!important;color:var(--muted)!important;font-size:10px!important}
-.leaflet-control-attribution a{color:var(--blue)!important}
-.leaflet-popup-content-wrapper{background:var(--panel)!important;border:1px solid var(--border)!important;color:var(--text)!important;border-radius:var(--r)!important;box-shadow:0 4px 20px rgba(0,0,0,.6)!important;font-family:'Courier New',monospace!important;font-size:12px!important}
-.leaflet-popup-tip{background:var(--panel)!important}
-.leaflet-popup-close-button{color:var(--muted)!important}
-#routeBtn.rt-on{background:rgba(255,152,0,.15)!important;border-color:#ff9800!important;color:#ff9800!important}
-#routeProfile{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:10px;letter-spacing:1px;padding:4px 6px;border-radius:var(--r);cursor:pointer;display:none;margin-top:4px}
-.route-stats{bottom:36px;left:10px;background:rgba(10,14,26,.88);border:1px solid #ff9800;border-radius:var(--r);padding:5px 9px;font-size:11px;color:#ff9800;letter-spacing:1px}
-
-/* ── MISSIONS LIBRARY ── */
-#tab-missions{flex-direction:column;padding:14px;gap:12px;overflow:hidden}
-.libhdr{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.libhdr h2{font-size:12px;letter-spacing:3px;color:var(--text);flex:1}
-.libwrap{flex:1;overflow-y:auto}
-table{width:100%;border-collapse:collapse}
-thead th{background:var(--panel);border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;font-size:10px;letter-spacing:2px;color:var(--muted);position:sticky;top:0}
-tbody tr{border-bottom:1px solid #0a0f1a;transition:background .13s}
-tbody tr:hover{background:rgba(255,255,255,.02)}
-tbody td{padding:9px 10px;font-size:12px}
-.tbadge{font-size:9px;padding:2px 6px;border-radius:3px;letter-spacing:1px;text-transform:uppercase}
-.tp{background:rgba(0,176,255,.15);color:var(--blue)}.ts{background:rgba(255,171,0,.15);color:var(--warn)}
-.te{background:rgba(0,230,118,.15);color:var(--accent)}.tv2{background:rgba(180,127,254,.15);color:var(--purple)}
-.tc{background:rgba(100,116,139,.15);color:var(--muted)}
-.rowact{display:flex;gap:5px;flex-wrap:wrap}
-
-/* ── MOBILE / RESPONSIVE ─────────────────────────────────────────────────── */
-.short{display:none}
-/* Remove 300ms tap delay on all interactive elements */
-button,a,[role=button]{touch-action:manipulation}
-
-/* Tablet (≤ 900px) */
-@media(max-width:900px){
-  .tele-grid{grid-template-columns:repeat(2,1fr)}
-}
-
-/* Mobile (≤ 768px) — natural page scroll, sticky header */
-@media(max-width:768px){
-  /* ── Layout: body scrolls, not clipped ── */
-  html{height:100%}
-  body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
-
-  /* Sticky header so tabs stay in view while scrolling */
-  header{position:sticky;top:0;z-index:300;flex-wrap:wrap;height:auto;min-height:46px;padding:6px 10px}
-  .logo{font-size:13px;letter-spacing:2px}
-  .tabs{order:3;width:100%;margin-top:4px;padding-top:4px;border-top:1px solid var(--border)}
-  .tab-btn{flex:1;text-align:center;padding:9px 2px;font-size:11px}
-  .full{display:none}.short{display:inline}
-
-  /* Tab panes: grow to content height (no more hard clipping) */
-  .tab-pane{flex:none;overflow:visible}
-  .tab-pane.active{display:flex;flex-direction:column;height:auto}
-
-  /* Tap targets */
-  .btn{min-height:40px}
-
-  /* ── Dashboard ── */
-  #tab-dashboard{overflow:visible;height:auto;padding:10px}
-  .tele-grid{grid-template-columns:repeat(2,1fr)}
-  .ctrl-row{grid-template-columns:1fr}
-  .ctrl-card{padding:10px}
-  .kbhint{display:none} /* no keyboard on mobile */
-
-  /* ── Planner: panel full-width above map ── */
-  #tab-planner{flex-direction:column;height:auto;overflow:visible}
-  .pp{width:100%;flex:none;height:auto;overflow:visible;border-right:none;border-bottom:1px solid var(--border)}
-  .wpscroll{flex:none;max-height:200px;overflow-y:auto}
-  .wped{max-height:none}
-  .mapwrap{height:380px;flex:none}
-  .pfooter{flex-wrap:wrap}
-  .pfooter .btn{flex:1 0 calc(50% - 8px)}
-
-  /* ── Missions library ── */
-  #tab-missions{height:auto;overflow:visible}
-  .libwrap{flex:none;overflow-x:auto}
-  table{min-width:520px}
-}
-
-/* Small phone (≤ 480px) */
-@media(max-width:480px){
-  .tele-grid{grid-template-columns:1fr}
-  .ctrl-card{padding:8px}
-  .dpad,.ptupad{grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px)}
-  .dpad button,.ptupad button{font-size:22px}
-  .abtn .btn{min-height:44px}
-  .mapcoords{display:none}
-  #tab-dashboard{padding:8px}
-  .mapwrap{height:320px}
-}
-</style>
+<title>UMBRIS</title>
+<link rel="stylesheet" href="/assets/leaflet.css"/>
+<link rel="stylesheet" href="/assets/gridstack.min.css"/>
+<link rel="stylesheet" href="/assets/gridstack-extra.min.css"/>
+<link rel="stylesheet" href="/css/main.css"/>
+<script src="/assets/gridstack-all.js"></script>
+<script src="/assets/leaflet.js"></script>
+<script src="/assets/Sortable.min.js"></script>
 </head>
 <body>
 
 <header>
-  <div class="logo">⚙ TANK C2</div>
+  <div class="logo">
+    <span class="logo-name">◈ UMBRIS</span>
+    <span class="logo-sub">AUTONOMOUS GROUND SYSTEM</span>
+  </div>
   <div class="conn-badge" id="cb"><span class="conn-dot"></span><span id="ct">OFFLINE</span></div>
   <div class="tabs">
     <button class="tab-btn active" data-tab="dashboard" onclick="go('dashboard')"><span class="full">DASHBOARD</span><span class="short">DASH</span></button>
     <button class="tab-btn" data-tab="planner"   onclick="go('planner')"><span class="full">MISSION PLANNER</span><span class="short">PLAN</span></button>
     <button class="tab-btn" data-tab="missions"  onclick="go('missions')"><span class="full">MISSIONS</span><span class="short">MSNS</span></button>
+    <button class="tab-btn" data-tab="docs"      onclick="go('docs')"><span class="full">DOCS</span><span class="short">DOCS</span></button>
+    <button class="tab-btn" data-tab="model"     onclick="go('model')"><span class="full">3D MODEL</span><span class="short">3D</span></button>
   </div>
   <form method="POST" action="/logout" style="margin-left:auto;flex-shrink:0">
     <button type="submit" style="background:none;border:1px solid var(--border);color:var(--muted);padding:3px 10px;border-radius:4px;font-size:11px;letter-spacing:1px;cursor:pointer;font-family:inherit">LOGOUT</button>
@@ -271,151 +42,22 @@ button,a,[role=button]{touch-action:manipulation}
 
 <!-- DASHBOARD -->
 <div id="tab-dashboard" class="tab-pane active">
-  <div class="tele-grid">
-    <div class="card">
-      <div class="card-title">▸ IMU</div>
-      <div class="card-row"><span class="card-label">Yaw</span><span class="tv" id="iY">—</span></div>
-      <div class="card-row"><span class="card-label">Pitch</span><span class="tv" id="iP">—</span></div>
-      <div class="card-row"><span class="card-label">Roll</span><span class="tv" id="iR">—</span></div>
-      <div class="card-row" style="margin-top:6px"><span class="card-label" style="font-size:10px">Age</span><span class="tv" id="iA" style="font-size:10px">—</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title">▸ GPS</div>
-      <div class="card-row"><span class="card-label">Lat</span><span class="tv" id="gLa">—</span></div>
-      <div class="card-row"><span class="card-label">Lon</span><span class="tv" id="gLo">—</span></div>
-      <div class="card-row"><span class="card-label">Alt</span><span class="tv" id="gAl">—</span></div>
-      <div class="card-row"><span class="card-label">Speed</span><span class="tv" id="gSp">—</span></div>
-      <div class="card-row"><span class="card-label">Sats / Fix</span><span class="tv" id="gSa">—</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title">▸ ENCODERS</div>
-      <div class="card-row"><span class="card-label">Left</span><span class="tv" id="eL">—</span></div>
-      <div class="card-row"><span class="card-label">Right</span><span class="tv" id="eR">—</span></div>
-      <div class="card-row" style="margin-top:6px"><span class="card-label" style="font-size:10px">Age</span><span class="tv" id="eA" style="font-size:10px">—</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title">▸ DISTANCE</div>
-      <div class="dist-big"><span id="dV">—</span><small>metres</small></div>
-      <div class="card-row" style="margin-top:4px"><span class="card-label" style="font-size:10px">Age</span><span class="tv" id="dA" style="font-size:10px">—</span></div>
-      <div class="card-row" style="margin-top:6px"><span class="card-label">Det. FPS</span><span class="tv" id="detFps">—</span></div>
-    </div>
-    <div class="card" id="sysCard">
-      <div class="card-title">▸ SYSTEM</div>
-      <div class="card-row"><span class="card-label">CPU</span><span class="tv" id="sysCpu">—</span></div>
-      <div class="card-row"><span class="card-label">GPU</span><span class="tv" id="sysGpu">—</span></div>
-      <div class="card-row"><span class="card-label">CPU Temp</span><span class="tv" id="sysCpuT">—</span></div>
-      <div class="card-row"><span class="card-label">GPU Temp</span><span class="tv" id="sysGpuT">—</span></div>
-      <div class="card-row"><span class="card-label">RAM</span><span class="tv" id="sysRam">—</span></div>
-    </div>
-    <div class="card" id="lidarCard">
-      <div class="card-title">▸ LIDAR</div>
-      <canvas id="radarCanvas" width="180" height="180" style="display:block;margin:auto"></canvas>
-      <div class="card-row" style="margin-top:6px">
-        <span class="card-label">Fwd min</span>
-        <span class="tv" id="lidarFwd">—</span>
-      </div>
-      <div id="obstBadge" style="display:none;text-align:center;margin-top:4px;color:var(--danger);font-size:11px;letter-spacing:1px">&#9888; OBSTACLE</div>
-      <div class="card-row" style="margin-top:6px"><span class="card-label">SLAM</span><span class="tv" id="slamPose">—</span></div>
-    </div>
-    <div class="card" id="slamMapCard" style="grid-column:span 3;display:none">
-      <div class="card-title">▸ SLAM MAP</div>
-      <canvas id="slamMapCanvas" style="display:block;width:100%;height:340px;image-rendering:pixelated;border-radius:4px"></canvas>
-    </div>
+  <div class="layout-toolbar">
+    <select id="layoutSelect"><option>Default</option></select>
+    <button class="btn btn-accent btn-sm" id="layoutSave">SAVE</button>
+    <button class="btn btn-muted btn-sm" id="layoutSaveAs">SAVE AS</button>
+    <button class="btn btn-danger btn-sm" id="layoutDelete">DELETE</button>
+    <button class="btn btn-muted btn-sm" id="layoutReset" onclick="loadDefaultLayout();initControls()">RESET</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-blue btn-sm" id="addWidgetBtn" onclick="toggleDrawer()">+ ADD WIDGET</button>
   </div>
+  <div class="grid-stack" id="dashboard-grid"></div>
+</div>
 
-  <div class="ctrl-row">
-    <div class="ctrl-card">
-      <div class="ctrl-title">▸ WHEEL CONTROL</div>
-      <div class="dpad">
-        <div></div><button id="bF" title="Forward (W)">▲</button><div></div>
-        <button id="bL" title="Left (A)">◄</button>
-        <button id="bS" class="sc" title="Stop (Space)">STOP</button>
-        <button id="bR" title="Right (D)">►</button>
-        <div></div><button id="bB" title="Backward (X)">▼</button><div></div>
-      </div>
-      <div class="srow">
-        <label>Speed</label>
-        <input type="range" id="ss" min="10" max="100" value="50" oninput="document.getElementById('sv').textContent=this.value+'%'">
-        <span class="sv" id="sv">50%</span>
-      </div>
-    </div>
-    <div class="ctrl-card">
-      <div class="ctrl-title">▸ PTU CONTROL</div>
-      <div class="ptupad">
-        <div></div><button id="bTU" title="Tilt Up (↑)">▲</button><div></div>
-        <button id="bPL" title="Pan Left (←)">◄</button>
-        <button id="bPC" class="cb" title="Centre (C)">CTR</button>
-        <button id="bPR" title="Pan Right (→)">►</button>
-        <div></div><button id="bTD" title="Tilt Down (↓)">▼</button><div></div>
-      </div>
-      <div class="srow">
-        <label>PTU Spd</label>
-        <input type="range" id="ps" min="10" max="100" value="40" oninput="document.getElementById('pv').textContent=this.value+'%'">
-        <span class="sv" id="pv">40%</span>
-      </div>
-    </div>
-    <div class="ctrl-card">
-      <div class="ctrl-title">▸ ACTIONS</div>
-      <div class="abtn">
-        <button class="btn btn-accent" onclick="sendCmd('resume_follow')">▶ RESUME FOLLOW</button>
-        <button class="btn btn-warn"   onclick="sendCmd('stop_follow')">⊘ STOP FOLLOW</button>
-        <button class="btn btn-danger" onclick="eStop()">⚠ EMERGENCY STOP</button>
-        <button class="btn btn-blue"   onclick="go('planner');newM()">⊕ NEW MISSION</button>
-        <div class="kbhint">W/A/D/X = drive &nbsp;|&nbsp; Space = stop<br>Arrow keys = PTU &nbsp;|&nbsp; C = centre PTU</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Video streams — unified panel -->
-  <div class="card" style="flex-shrink:0;padding:0;overflow:hidden;position:relative;background:#000">
-    <div style="display:flex;flex-wrap:wrap;gap:0">
-      <!-- Main feed (YOLO + FLIR side-by-side) -->
-      <div style="flex:2;min-width:300px;position:relative">
-        <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">DETECTION + THERMAL</div>
-        <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
-          <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
-            Q <input id="sqSlider" type="range" min="10" max="95" value="55" step="5"
-                style="width:60px;accent-color:var(--accent);cursor:pointer"
-                oninput="onSQSlider(this.value)">
-            <span id="sqVal">55</span>
-          </label>
-          <span id="streamStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING</span>
-        </div>
-        <img id="streamImg" alt="Camera feed" style="width:100%;display:block;object-fit:contain"
-          onerror="streamErr()" onload="streamOk()">
-        <div id="streamPlaceholder" style="display:none;width:100%;height:200px;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#050810">
-          <div style="font-size:11px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>
-          <div style="font-size:10px;color:var(--muted)">CAMERA FEED UNAVAILABLE</div>
-        </div>
-      </div>
-      <!-- Depth feed -->
-      <div style="flex:1;min-width:200px;position:relative;border-left:1px solid var(--border)">
-        <div style="position:absolute;top:8px;left:10px;z-index:10;font-size:10px;letter-spacing:2px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">DEPTH</div>
-        <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
-          <label style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px;display:flex;align-items:center;gap:6px;cursor:pointer">
-            Q <input id="dqSlider" type="range" min="10" max="95" value="60" step="5"
-                style="width:60px;accent-color:var(--blue);cursor:pointer"
-                oninput="onDQSlider(this.value)">
-            <span id="dqVal">60</span>
-          </label>
-          <span id="depthStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">STARTING</span>
-        </div>
-        <img id="depthImg" alt="Depth feed" style="width:100%;display:none;object-fit:contain"
-          onerror="depthErr()" onload="depthOk()">
-        <div id="depthPlaceholder" style="width:100%;height:200px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:#050810">
-          <div style="font-size:11px;letter-spacing:2px;color:#333">STARTING DEPTH</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Target gallery -->
-  <div class="card" style="flex-shrink:0">
-    <div class="card-title">▸ KNOWN TARGETS</div>
-    <div id="tgGrid" class="tg-grid">
-      <div id="tgEmpty" style="color:var(--muted);font-size:11px;padding:4px 0">No targets identified yet</div>
-    </div>
-  </div>
+<!-- Widget add drawer -->
+<div class="widget-drawer" id="widgetDrawer">
+  <div class="widget-drawer-title">ADD WIDGET</div>
+  <div class="widget-drawer-items"></div>
 </div>
 
 <!-- MISSION PLANNER -->
@@ -477,15 +119,15 @@ button,a,[role=button]{touch-action:manipulation}
       </div>
       <div class="af" id="af-wait"><div class="frow"><label>Wait seconds</label><input type="text" id="wWt" value="5" oninput="syncWP()"></div></div>
       <div class="af" id="af-scan">
-        <div class="i2"><div class="frow" style="margin:0"><label>Scan from (°)</label><input type="text" id="wSF" value="-90" oninput="syncWP()"></div>
-        <div class="frow" style="margin:0"><label>Scan to (°)</label><input type="text" id="wST" value="90" oninput="syncWP()"></div></div>
+        <div class="i2"><div class="frow" style="margin:0"><label>Scan from (&deg;)</label><input type="text" id="wSF" value="-90" oninput="syncWP()"></div>
+        <div class="frow" style="margin:0"><label>Scan to (&deg;)</label><input type="text" id="wST" value="90" oninput="syncWP()"></div></div>
         <div class="frow"><label>Scan speed (sps)</label><input type="text" id="wSS" value="200" oninput="syncWP()"></div>
       </div>
       <div class="af" id="af-follow"><div class="frow"><label>Follow duration (s, 0=until lost)</label><input type="text" id="wFD" value="0" oninput="syncWP()"></div></div>
       <div class="af" id="af-set_ptu">
         <div class="i2">
-          <div class="frow" style="margin:0"><label>Pan (°)</label><input type="text" id="wPP" value="0" oninput="syncWP()"></div>
-          <div class="frow" style="margin:0"><label>Tilt (°)</label><input type="text" id="wPT" value="0" oninput="syncWP()"></div>
+          <div class="frow" style="margin:0"><label>Pan (&deg;)</label><input type="text" id="wPP" value="0" oninput="syncWP()"></div>
+          <div class="frow" style="margin:0"><label>Tilt (&deg;)</label><input type="text" id="wPT" value="0" oninput="syncWP()"></div>
         </div>
       </div>
       <div class="af" id="af-custom"><div class="frow"><label>Command string</label><input type="text" id="wCC" placeholder="e.g. stop_follow" oninput="syncWP()"></div></div>
@@ -536,979 +178,121 @@ button,a,[role=button]{touch-action:manipulation}
   </div>
 </div>
 
-<script>
-// ── Helpers ────────────────────────────────────────────────────────────────
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+<div id="tab-docs" class="tab-pane">
+  <iframe id="docs-frame" style="width:100%;flex:1;min-height:0;border:none;background:#0a0e1a" src="about:blank"></iframe>
+</div>
 
-// ── WebSocket — exponential backoff reconnect ──────────────────────────────
-let ws, wsDelay = 1000;
-async function connectWS(){
-  let tok = '';
-  try {
-    const r = await fetch('/api/ws-token');
-    if (r.status === 401) { location.href = '/login'; return; }
-    tok = (await r.json()).token;
-  } catch { setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 1.5, 15000); return; }
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}?tok=${tok}`);
-  ws.onopen  = () => { wsDelay = 1000; };
-  ws.onclose = () => { setTimeout(connectWS, wsDelay); wsDelay = Math.min(wsDelay * 1.5, 15000); };
-  ws.onerror = () => {};
-  ws.onmessage = e => { try { handle(JSON.parse(e.data)); } catch {} };
-}
-function sendCmd(c){if(ws?.readyState===1)ws.send(JSON.stringify({cmd:c}))}
-function handle(m){
-  if(m.type==='connection'){
-    const on=m.status==='connected';
-    document.getElementById('cb').className='conn-badge'+(on?' on':'');
-    document.getElementById('ct').textContent=on?'ONLINE':'OFFLINE';
-  } else if(m.type==='status'){
-    updateTele(m.data);
-  } else if(m.type==='new_target'){
-    loadTargets();
-  } else if(m.type==='learn_progress'){
-    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
-    if(card){
-      const prog=card.querySelector('.tg-learn-prog');
-      if(prog){prog.textContent=m.count+' / '+m.total;prog.style.display='block';}
-    }
-  } else if(m.type==='learn_status'){
-    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
-    if(card){
-      const prog=card.querySelector('.tg-learn-prog');
-      const btn=card.querySelector('.tg-learn');
-      if(m.status==='analysing'){
-        if(prog){prog.textContent='Asking AI (' +m.count+' crops)...';prog.style.display='block';prog.style.color='#9c6fff';}
-      } else if(m.status==='error'){
-        if(prog){prog.textContent='Error: '+m.message;prog.style.display='block';prog.style.color='#ff4444';}
-        if(btn){btn.textContent='DESCRIBE';btn.classList.remove('learning');}
+<div id="tab-model" class="tab-pane" style="background:#0a0e1a;flex-direction:column">
+  <script type="module" src="/assets/model-viewer.min.js"></script>
+  <model-viewer
+    id="tank-viewer"
+    src="/models/tank.glb"
+    camera-controls
+    auto-rotate
+    auto-rotate-delay="2000"
+    rotation-per-second="20deg"
+    shadow-intensity="1"
+    environment-image="neutral"
+    exposure="1"
+    ar
+    ar-modes="webxr scene-viewer"
+    ar-scale="fixed"
+    style="width:100%;flex:1;min-height:0;background:#0a0e1a;--progress-bar-color:#00e676;--progress-mask:#0a0e1a">
+    <button slot="ar-button" style="position:absolute;bottom:16px;right:16px;background:#00e676;color:#0a0e1a;border:none;padding:10px 18px;border-radius:5px;font-family:'Courier New',monospace;font-size:11px;font-weight:bold;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+      VIEW IN AR
+    </button>
+    <div slot="progress-bar" style="position:absolute;bottom:0;left:0;right:0;height:2px;background:#1f2937">
+      <div id="model-progress" style="height:100%;background:#00e676;width:0%;transition:width .2s"></div>
+    </div>
+    <div slot="poster" style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;font-family:'Courier New',monospace;font-size:13px;letter-spacing:2px">LOADING MODEL...</div>
+  </model-viewer>
+  <div style="flex-shrink:0;padding:8px 14px;background:#111827;border-top:1px solid #1f2937;display:flex;gap:16px;align-items:center;font-family:'Courier New',monospace;font-size:10px;color:#64748b;letter-spacing:1px">
+    <span>DRAG TO ROTATE</span><span>SCROLL TO ZOOM</span><span>AUTO-ROTATES WHEN IDLE</span>
+    <button onclick="document.getElementById('tank-viewer').cameraOrbit='0deg 75deg 105%';document.getElementById('tank-viewer').fieldOfView='auto'" style="margin-left:auto;background:none;border:1px solid #1f2937;color:#64748b;padding:3px 10px;border-radius:4px;font-size:10px;letter-spacing:1px;cursor:pointer;font-family:inherit">RESET VIEW</button>
+  </div>
+  <script>
+  (function(){
+    var viewer = document.getElementById('tank-viewer');
+    viewer.addEventListener('load', function() {
+      var scene = null;
+      try { scene = viewer.scene; } catch(e) {}
+      if (!scene || !scene.traverse) {
+        try { scene = viewer.model && viewer.model.scene; } catch(e) {}
       }
-    }
-  } else if(m.type==='target_description'){
-    const card=document.querySelector(`.tg-card[data-pid="${m.target_id}"]`);
-    if(card){
-      const desc=card.querySelector('.tg-desc');
-      const btn=card.querySelector('.tg-learn');
-      const prog=card.querySelector('.tg-learn-prog');
-      if(desc){desc.textContent=m.description;desc.style.display='block';}
-      if(btn){btn.textContent='DESCRIBE';btn.classList.remove('learning');}
-      if(prog){prog.style.display='none';prog.style.color='';}
-      card.classList.add('has-desc');
-    }
-    setTimeout(loadTargets, 500);  // refresh embed count after learn completes
-  } else if(m.type==='mission_status'){
-    if(m.event==='executing') showBanner(m.name,'ok');
-    else if(m.event==='completed'){
-      console.log('[mission] completed:',m.name,'id:',m.missionId);
-      hideBanner();clearMissionTarget();
-    }
-    else if(m.event==='aborted'){hideBanner();clearMissionTarget();}
-    else if(m.event==='mission_faulted'){
-      const fl={gps_lost:'⚠ GPS LOST',stuck:'⚠ STUCK',wheel_fail:'⚠ WHEEL FAULT'};
-      console.warn('[mission] faulted:',m.fault,'mission:',m.name,'id:',m.missionId);
-      showBanner(`${fl[m.fault]||'⚠ MISSION FAILED'} — ${m.name||''}`, 'fault');
-      clearMissionTarget();
-    }
-    else if(m.event==='abort_pending') showBanner('ABORT QUEUED — RECONNECTING TO TANK','pending');
-    else if(m.event==='pushed') console.log('[mission] pushed:',m.name);
-  } else if(m.type==='scan'){
-    updateRadar(m);
-  } else if(m.type==='slam_map'){
-    updateSlamMap(m);
-  }
-}
-
-function updateRadar(msg){
-  const canvas=document.getElementById('radarCanvas');
-  if(!canvas)return;
-  const ctx=canvas.getContext('2d');
-  const cx=canvas.width/2,cy=canvas.height/2;
-
-  // Auto-scale: find furthest valid point, round up to nearest 0.5m, min 1.5m
-  const pts=msg.pts||[];
-  let maxDist=0;
-  for(const[,d]of pts) if(d>0) maxDist=Math.max(maxDist,d);
-  const range=Math.max(1.5, Math.ceil(maxDist*2)/2);  // round up to nearest 0.5m
-  const scale=cx/range;
-
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  // Range rings at 25/50/75/100% of current range, labelled
-  ctx.strokeStyle='#1f2937';ctx.lineWidth=1;
-  ctx.fillStyle='#4b5563';ctx.font='8px monospace';ctx.textAlign='center';
-  [0.25,0.5,0.75,1.0].forEach(frac=>{
-    const r=frac*range, px=r*scale;
-    ctx.beginPath();ctx.arc(cx,cy,px,0,Math.PI*2);ctx.stroke();
-    ctx.fillText(r.toFixed(1)+'m', cx, cy-px-2);
-  });
-
-  // Forward arc highlight
-  const arcRad=30*Math.PI/180;
-  ctx.fillStyle='rgba(0,230,118,0.05)';
-  ctx.beginPath();ctx.moveTo(cx,cy);
-  ctx.arc(cx,cy,cx,-Math.PI/2-arcRad,-Math.PI/2+arcRad);
-  ctx.closePath();ctx.fill();
-
-  // Scan points
-  ctx.fillStyle=msg.obs?'#ff1744':'#00e676';
-  for(const[a,d]of pts){
-    if(d<=0)continue;
-    const rad=(a-90)*Math.PI/180;
-    const px=cx+Math.cos(rad)*d*scale,py=cy+Math.sin(rad)*d*scale;
-    ctx.beginPath();ctx.arc(px,py,1.5,0,Math.PI*2);ctx.fill();
-  }
-
-  // Robot dot
-  ctx.fillStyle='#00b0ff';
-  ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
-
-  const fwdEl=document.getElementById('lidarFwd');
-  const obsEl=document.getElementById('obstBadge');
-  if(fwdEl){fwdEl.textContent=msg.fwd>0?f(msg.fwd,2)+' m':'—';fwdEl.style.color=msg.obs?'var(--danger)':'var(--accent)';}
-  if(obsEl)obsEl.style.display=msg.obs?'block':'none';
-}
-
-// ── SLAM Map ───────────────────────────────────────────────────────────────
-let lastSlamMapMeta = null;   // {res, ox, oy, w, h} — for robot overlay
-let lastSlamPose    = null;   // {x, y, theta} from latest status
-
-function updateSlamMap(msg){
-  const card = document.getElementById('slamMapCard');
-  const canvas = document.getElementById('slamMapCanvas');
-  if(!card || !canvas) return;
-
-  card.style.display = '';
-
-  // Fixed canvas pixel buffer — never resized, so layout never jumps
-  const CW = 800, CH = 340;
-  if(canvas.width !== CW || canvas.height !== CH){
-    canvas.width  = CW;
-    canvas.height = CH;
-  }
-
-  lastSlamMapMeta = {res: msg.res, ox: msg.ox, oy: msg.oy, w: msg.w, h: msg.h};
-
-  const ctx = canvas.getContext('2d');
-
-  // Scale map to fit inside canvas while preserving aspect ratio (letterbox)
-  const scale = Math.min(CW / msg.w, CH / msg.h);
-  const dw = Math.round(msg.w * scale);
-  const dh = Math.round(msg.h * scale);
-  const dx = Math.round((CW - dw) / 2);
-  const dy = Math.round((CH - dh) / 2);
-
-  const img = new Image();
-  img.onload = () => {
-    ctx.fillStyle = '#0a1a28';
-    ctx.fillRect(0, 0, CW, CH);
-    ctx.drawImage(img, dx, dy, dw, dh);
-    drawRobotOnMap(ctx, CW, CH, dx, dy, dw, dh);
-  };
-  img.src = 'data:image/png;base64,' + msg.png;
-}
-
-function drawRobotOnMap(ctx, CW, CH, dx, dy, dw, dh){
-  if(!lastSlamPose || !lastSlamMapMeta || !lastSlamPose.valid) return;
-  const {res, ox, oy, w, h} = lastSlamMapMeta;
-
-  // Map cell → canvas pixel, accounting for letterbox offset and scale
-  const scaleX = dw / w, scaleY = dh / h;
-  const px = dx + (lastSlamPose.x - ox) / res * scaleX;
-  const py = dy + dh - (lastSlamPose.y - oy) / res * scaleY;
-
-  if(px < dx || px > dx+dw || py < dy || py > dy+dh) return;
-
-  // Heading arrow
-  const theta = lastSlamPose.theta;
-  ctx.save();
-  ctx.translate(px, py);
-  ctx.rotate(-theta);
-  ctx.strokeStyle = '#ff5252';
-  ctx.lineWidth   = 2;
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(10,0); ctx.stroke();
-  ctx.restore();
-
-  // Robot dot
-  ctx.fillStyle = '#00b0ff';
-  ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI*2); ctx.fill();
-}
-
-// ── Telemetry ──────────────────────────────────────────────────────────────
-let lastGPS=null;
-const f=(v,d=1,u='')=>(v==null||isNaN(v))?'—':v.toFixed(d)+(u?' '+u:'');
-const sv2=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
-const cardOf=id=>{const e=document.getElementById(id);return e?e.closest('.card'):null};
-const setStale=(id,stale)=>{const c=cardOf(id);if(c)c.classList.toggle('stale',stale)};
-function updateTele(d){
-  if(!d){
-    // Jetson disconnected — reset all displayed values to dashes
-    ['iY','iP','iR','iA','gLa','gLo','gAl','gSp','gSa','eL','eR','eA','dV','dA','detFps','slamPose','sysCpu','sysGpu','sysCpuT','sysGpuT','sysRam'].forEach(id=>sv2(id,'—'));
-    ['iY','gLa','eL','dV'].forEach(id=>setStale(id,false));
-    return;
-  }
-  if(d.imu){sv2('iY',f(d.imu.yaw,1,'°'));sv2('iP',f(d.imu.pitch,1,'°'));sv2('iR',f(d.imu.roll,1,'°'));sv2('iA',f(d.imu.age_ms,0,'ms'));setStale('iY',d.imu.age_ms>2000)}
-  if(d.gps){const g=d.gps;sv2('gLa',f(g.lat,6));sv2('gLo',f(g.lon,6));sv2('gAl',f(g.alt,1,'m'));sv2('gSp',f(g.speed_knots*1.852,1,'km/h'));sv2('gSa',`${g.sats} / Q${g.quality}`);setStale('gLa',g.age_ms>2000);if(g.quality>0&&g.lat!==0){lastGPS=[g.lat,g.lon];moveTank(g.lat,g.lon)}}
-  if(d.encoders){sv2('eL',d.encoders.left);sv2('eR',d.encoders.right);sv2('eA',f(d.encoders.age_ms,0,'ms'));setStale('eL',d.encoders.age_ms>2000)}
-  if(d.distance_m!=null&&d.distance_m>=0){sv2('dV',f(d.distance_m,2));sv2('dA',f(d.distance_age_ms,0,'ms'));setStale('dV',d.distance_age_ms>2000)}
-  if(d.detection_fps!=null)sv2('detFps',f(d.detection_fps,1,' fps'));
-  if(d.slam_pose?.valid){
-    lastSlamPose = d.slam_pose;
-    sv2('slamPose',`x:${f(d.slam_pose.x,1)} y:${f(d.slam_pose.y,1)} ${f(d.slam_pose.theta*180/Math.PI,0)}°`);
-  } else sv2('slamPose','—');
-  // System monitor (from generic sensor slots)
-  if(d.sensors){
-    const s=d.sensors;
-    if(s.cpu_usage_pct)sv2('sysCpu',f(s.cpu_usage_pct.value,1,'%'));
-    if(s.gpu_usage_pct)sv2('sysGpu',f(s.gpu_usage_pct.value,1,'%'));
-    if(s.cpu_temp_c){sv2('sysCpuT',f(s.cpu_temp_c.value,1,'°C'));setStale('sysCpuT',s.cpu_temp_c.value>90)}
-    if(s.gpu_temp_c){sv2('sysGpuT',f(s.gpu_temp_c.value,1,'°C'));setStale('sysGpuT',s.gpu_temp_c.value>90)}
-    if(s.ram_used_mb&&s.ram_total_mb)sv2('sysRam',`${f(s.ram_used_mb.value/1024,1)} / ${f(s.ram_total_mb.value/1024,1)} GB`);
-  }
-  if(d.stream_quality!=null&&!sqDebounce){const sl=document.getElementById('sqSlider');if(sl){sl.value=d.stream_quality;document.getElementById('sqVal').textContent=d.stream_quality;}}
-  if(d.target_person_id!=null) highlightTarget(d.target_person_id);
-  // Mode + mission progress from Jetson telemetry
-  if(d.mission&&d.mission.running){
-    const idx=(d.mission.waypoint_idx??0)+1, tot=d.mission.waypoint_count||'?';
-    const name=d.mission.name||'MISSION';
-    const fault=d.mission.fault||'';
-    const faultLabels={'gps_lost':'⚠ GPS LOST','stuck':'⚠ STUCK','wheel_fail':'⚠ WHEEL FAULT'};
-    if(fault&&faultLabels[fault])
-      showBanner(`${faultLabels[fault]} — ${name} WP ${idx}/${tot} PAUSED`,'fault');
-    else
-      showBanner(`${name} — WP ${idx}/${tot}`,'ok');
-    document.getElementById('skipBtn').style.display='';
-    if(d.mission.target_lat&&map)moveMissionTarget(d.mission.target_lat,d.mission.target_lon);
-  } else if(d.mode&&d.mode!=='mission'){
-    const mb=document.getElementById('mb');
-    // Don't auto-clear if a fault or abort-pending banner is showing — those are
-    // cleared explicitly by the mission_faulted / aborted / completed events
-    if(!mb.classList.contains('pending')&&!mb.classList.contains('fault')){
-      hideBanner();clearMissionTarget();
-    }
-  }
-}
-
-// ── Target gallery ─────────────────────────────────────────────────────────
-let _activeTargetId = -1;
-
-function loadTargets(){
-  fetch('/api/targets').then(r=>r.ok?r.json():[]).then(list=>{
-    const grid = document.getElementById('tgGrid');
-    const empty = document.getElementById('tgEmpty');
-    if(!list.length){ empty.style.display=''; return; }
-    empty.style.display='none';
-    const existing = new Set([...grid.querySelectorAll('.tg-card')].map(c=>+c.dataset.pid));
-    list.forEach(t=>{
-      if(existing.has(t.id)){
-        // Update label if name changed
-        const lbl = grid.querySelector(`.tg-card[data-pid="${t.id}"] .tg-label`);
-        if(lbl && !lbl.isContentEditable) lbl.textContent = t.name;
-        const prof = grid.querySelector(`.tg-card[data-pid="${t.id}"] .tg-prof`);
-        if(prof) setEmbedCount(prof, t.embed_count||0);
-        return;
+      if (!scene || !scene.traverse) {
+        Object.getOwnPropertySymbols(viewer).forEach(function(s) {
+          try {
+            var v = viewer[s];
+            if (v && typeof v.traverse === 'function' && !scene) scene = v;
+          } catch(e) {}
+        });
       }
-      const card = document.createElement('div');
-      card.className='tg-card'; card.dataset.pid=t.id;
-      card.innerHTML=`<img class="tg-thumb" src="/api/targets/${t.id}/thumb?t=${Date.now()}" alt="P${t.id}" loading="lazy">
-<span class="tg-label" title="Click to rename">${t.name}</span>
-<button class="tg-follow" onclick="followTarget(${t.id})">FOLLOW</button>
-<div class="tg-learn-prog"></div>
-<button class="tg-learn" onclick="toggleLearn(this,${t.id})">DESCRIBE</button>
-<div class="tg-prof"></div>
-<div class="tg-desc"></div>`;
-      setEmbedCount(card.querySelector('.tg-prof'), t.embed_count||0);
-      // Inline rename on label click
-      const lbl = card.querySelector('.tg-label');
-      lbl.addEventListener('click', () => startRename(lbl, t.id));
-      grid.appendChild(card);
+      if (!scene) return;
+
+      var ptuAsm = null, ptuHead = null;
+      var TILT_NAMES = ['PTU_Head-1','OAK-D-Pro-1','flir-tau2-640-v00-1',
+                        'waveshare_tof_sensor_d-1','head_motor_adaptor-1','Z3_Board-1'];
+      var tiltNodes = [];
+      scene.traverse(function(o) {
+        if (o.name === 'PTU_ASM-1')              ptuAsm = o;
+        if (o.name === 'PTU_Head-1')             ptuHead = o;
+        if (TILT_NAMES.indexOf(o.name) !== -1)   tiltNodes.push(o);
+      });
+      if (!ptuAsm || !ptuHead) return;
+
+      var cx = 0, cy = 0, cz = 0;
+      ptuHead.traverseVisible(function(o) {
+        if (!o.geometry || cx !== 0) return;
+        o.updateWorldMatrix(true, false);
+        o.geometry.computeBoundingBox();
+        var bb = o.geometry.boundingBox;
+        var lx = (bb.min.x + bb.max.x) / 2;
+        var ly = bb.min.y;
+        var lz = (bb.min.z + bb.max.z) / 2;
+        var m  = o.matrixWorld.elements;
+        cx = m[0]*lx + m[4]*ly + m[8]*lz + m[12];
+        cy = m[1]*lx + m[5]*ly + m[9]*lz + m[13];
+        cz = m[2]*lx + m[6]*ly + m[10]*lz + m[14];
+      });
+
+      var tiltPivot = new ptuHead.constructor();
+      tiltPivot.position.set(cx, cy, cz);
+      ptuAsm.add(tiltPivot);
+      tiltNodes.forEach(function(n) { tiltPivot.attach(n); });
+
+      var PAN_AMP    = 45 * Math.PI / 180;
+      var PAN_OFFSET = -90 * Math.PI / 180;
+      var TILT_AMP   = 18 * Math.PI / 180;
+      var PERIOD     = 12;
+
+      function step(ts) {
+        var t = ts / 1000;
+        ptuAsm.rotation.y   = PAN_OFFSET + PAN_AMP * Math.sin(2 * Math.PI * t / PERIOD);
+        tiltPivot.rotation.x = TILT_AMP * Math.sin(2 * Math.PI * 2 * t / PERIOD);
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
     });
-    highlightTarget(_activeTargetId);
-  }).catch(()=>{});
-}
+  })();
+  </script>
+</div>
 
-function startRename(lbl, id){
-  const prev = lbl.textContent;
-  lbl.contentEditable = 'true';
-  lbl.focus();
-  // Select all text
-  const sel = window.getSelection();
-  const range = document.createRange();
-  range.selectNodeContents(lbl);
-  sel.removeAllRanges(); sel.addRange(range);
-
-  const commit = () => {
-    lbl.contentEditable = 'false';
-    const name = lbl.textContent.trim().slice(0, 64) || prev;
-    lbl.textContent = name;
-    fetch(`/api/targets/${id}/name`, {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({name})
-    }).catch(()=>{});
-  };
-  lbl.addEventListener('blur', commit, {once:true});
-  lbl.addEventListener('keydown', e => {
-    if(e.key === 'Enter'){ e.preventDefault(); lbl.blur(); }
-    if(e.key === 'Escape'){ lbl.textContent = prev; lbl.contentEditable='false'; }
-  }, {once:true});
-}
-
-function followTarget(id){
-  sendCmd('set_target:'+id);
-}
-
-function toggleLearn(btn, id){
-  const prog=btn.previousElementSibling;
-  if(btn.classList.contains('learning')){
-    btn.classList.remove('learning');
-    btn.textContent='DESCRIBE';
-    if(prog){prog.textContent='Sending...';prog.style.display='block';}
-    sendCmd('learn_stop');
-    setTimeout(loadTargets, 1500);  // refresh embed count after early stop + file write
-  } else {
-    btn.classList.add('learning');
-    btn.textContent='■ STOP';
-    if(prog){prog.textContent='0 / 20';prog.style.display='block';}
-    sendCmd('learn_start:'+id);
-  }
-}
-
-function setEmbedCount(el, n){
-  if(!el) return;
-  el.textContent = '◉ ' + n + ' embed' + (n===1?'':'s');
-  el.dataset.level = n >= 16 ? '2' : n >= 6 ? '1' : '0';
-}
-
-// ── Road Routing ─────────────────────────────────────────────────────────────
-
-function toggleAutoRoute(){
-  autoRouteEnabled=!autoRouteEnabled;
-  const btn=document.getElementById('routeBtn');
-  const sel=document.getElementById('routeProfile');
-  btn.classList.toggle('rt-on',autoRouteEnabled);
-  sel.style.display=autoRouteEnabled?'block':'none';
-  if(autoRouteEnabled){
-    fetchRoute();
-  } else {
-    routeSegments=null;
-    routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
-    document.getElementById('routeStats').style.display='none';
-    redrawMap(); // restore green dashed line
-  }
-}
-
-function scheduleRouteRefresh(){
-  if(!autoRouteEnabled)return;
-  clearTimeout(_routeTimer);
-  _routeTimer=setTimeout(fetchRoute,700);
-}
-
-async function fetchRoute(){
-  if(!autoRouteEnabled||wps.length<2){
-    routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
-    document.getElementById('routeStats').style.display='none';
-    return;
-  }
-  const statsEl=document.getElementById('routeStats');
-  statsEl.textContent='Routing…';statsEl.style.display='block';
-  const profile=document.getElementById('routeProfile').value;
-  const pairs=[];
-  for(let i=0;i<wps.length-1;i++) pairs.push([wps[i],wps[i+1]]);
-  if(document.getElementById('mRt').checked&&wps.length>=2) pairs.push([wps[wps.length-1],wps[0]]);
-
-  const segments=[];
-  let totalDist=0,totalDur=0,anyFailed=false;
-  for(const[a,b] of pairs){
-    try{
-      const r=await fetch('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({points:[{lat:a.lat,lng:a.lng},{lat:b.lat,lng:b.lng}],profile})});
-      const d=await r.json();
-      if(d.points){segments.push(d.points);totalDist+=d.distance||0;totalDur+=d.duration||0;}
-      else{segments.push(null);anyFailed=true;}
-    }catch{segments.push(null);anyFailed=true;}
-  }
-  routeSegments=segments;
-  drawRouteLayer();
-  const km=(totalDist/1000).toFixed(2);
-  const mins=Math.round(totalDur/60);
-  const exp=buildExpandedWaypoints().length;
-  statsEl.textContent=`${km} km · ~${mins} min · ${exp} wpts sent${anyFailed?' · ⚠ some segs straight-line':''}`;
-}
-
-function drawRouteLayer(){
-  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
-  if(!routeSegments)return;
-  routeSegments.forEach(seg=>{
-    if(!seg)return;
-    const l=L.polyline(seg.map(p=>[p.lat,p.lng]),{color:'#ff9800',weight:4,opacity:.8,lineJoin:'round'}).addTo(map);
-    routeLayers.push(l);
-  });
-}
-
-function buildExpandedWaypoints(){
-  if(!routeSegments||routeSegments.length<wps.length-1) return wps;
-  const defSpeed=+document.getElementById('mSp').value;
-  const expanded=[];
-  for(let i=0;i<wps.length;i++){
-    if(i>0&&routeSegments[i-1]){
-      const seg=routeSegments[i-1];
-      for(let j=1;j<seg.length-1;j++){
-        expanded.push({id:`_r${i-1}_${j}`,name:`Route ${i}.${j}`,
-          lat:seg[j].lat,lng:seg[j].lng,
-          speed:wps[i-1].speed||defSpeed,arrivalRadius:5,arrivalAction:'continue',
-          waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,
-          followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''});
-      }
-    }
-    expanded.push(wps[i]);
-  }
-  // Return-to-start segment
-  if(document.getElementById('mRt').checked&&routeSegments.length===wps.length){
-    const seg=routeSegments[wps.length-1];
-    if(seg) for(let j=1;j<seg.length-1;j++){
-      expanded.push({id:`_rret_${j}`,name:`Return ${j}`,
-        lat:seg[j].lat,lng:seg[j].lng,
-        speed:wps[0].speed||defSpeed,arrivalRadius:5,arrivalAction:'continue',
-        waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,
-        followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''});
-    }
-  }
-  return expanded;
-}
-
-function highlightTarget(id){
-  _activeTargetId = id;
-  document.querySelectorAll('.tg-card').forEach(c=>{
-    c.classList.toggle('active-target', +c.dataset.pid === id);
-  });
-}
-
-// Load gallery on page load (Jetson may already have known targets)
-loadTargets();
-
-// ── Controls ───────────────────────────────────────────────────────────────
-const WM=1000,PM=500;
-const spd=()=>+document.getElementById('ss').value/100;
-const pspd=()=>+document.getElementById('ps').value/100;
-const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-const wc=(l,r)=>sendCmd(`manual_wheel:${Math.round(clamp(l*WM*spd(),-WM,WM))}:${Math.round(clamp(r*WM*spd(),-WM,WM))}`);
-const pc=(p,t)=>sendCmd(`manual_ptu:${Math.round(p*PM*pspd())}:${Math.round(t*PM*pspd())}`);
-function eStop(){sendCmd('emergency_stop');sendCmd('manual_wheel:0:0');sendCmd('manual_ptu:0:0')}
-
-const held={};
-function holdBtn(id,press,rel){
-  const b=document.getElementById(id);if(!b)return;
-  const up=()=>{clearInterval(held[id]);delete held[id];b.classList.remove('held');if(rel)rel()};
-  b.addEventListener('mousedown',e=>{e.preventDefault();b.classList.add('held');press();held[id]=setInterval(press,100)});
-  b.addEventListener('mouseup',up);b.addEventListener('mouseleave',up);
-  b.addEventListener('touchstart',e=>{e.preventDefault();b.classList.add('held');press();held[id]=setInterval(press,100)},{passive:false});
-  b.addEventListener('touchend',up);
-}
-holdBtn('bF',()=>wc(1,1),()=>wc(0,0));holdBtn('bB',()=>wc(-1,-1),()=>wc(0,0));
-holdBtn('bL',()=>wc(-.6,.6),()=>wc(0,0));holdBtn('bR',()=>wc(.6,-.6),()=>wc(0,0));
-holdBtn('bS',()=>wc(0,0));
-holdBtn('bPL',()=>pc(-1,0),()=>pc(0,0));holdBtn('bPR',()=>pc(1,0),()=>pc(0,0));
-holdBtn('bTU',()=>pc(0,1),()=>pc(0,0));holdBtn('bTD',()=>pc(0,-1),()=>pc(0,0));
-holdBtn('bPC',()=>sendCmd('manual_ptu:centre'));
-
-const kd=new Set();
-document.addEventListener('keydown',e=>{
-  if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName))return;
-  if(kd.has(e.code))return;kd.add(e.code);
-  if(e.code==='KeyW')wc(1,1);else if(e.code==='KeyX')wc(-1,-1);
-  else if(e.code==='KeyA')wc(-.6,.6);else if(e.code==='KeyD')wc(.6,-.6);
-  else if(e.code==='Space'){wc(0,0);e.preventDefault();}
-  else if(e.code==='ArrowLeft'){pc(-1,0);e.preventDefault();}
-  else if(e.code==='ArrowRight'){pc(1,0);e.preventDefault();}
-  else if(e.code==='ArrowUp'){pc(0,1);e.preventDefault();}
-  else if(e.code==='ArrowDown'){pc(0,-1);e.preventDefault();}
-  else if(e.code==='KeyC')sendCmd('manual_ptu:centre');
-  else if(e.code==='Escape')exitAdd();
-});
-document.addEventListener('keyup',e=>{
-  kd.delete(e.code);
-  if(['KeyW','KeyX','KeyA','KeyD','Space'].includes(e.code))wc(0,0);
-  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code))pc(0,0);
-});
-// If the window loses focus (alt-tab etc.) keyup events are lost — stop the robot
-window.addEventListener('blur',()=>{kd.clear();wc(0,0);pc(0,0);});
-
-// ── Tab ────────────────────────────────────────────────────────────────────
-function go(name){
-  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.dataset.tab===name)b.classList.add('active')});
-  if(name==='missions')loadLib();
-  if(name==='planner')setTimeout(()=>map?.invalidateSize(),120);
-}
-
-// ── Map ────────────────────────────────────────────────────────────────────
-let map,osmL,satL,satOn=false,addMode=false,tankMk=null,wpMks=[],wpPoly=null;
-let userMk=null,userAccCircle=null,userLatLng=null;
-let autoRouteEnabled=false,routeSegments=null,routeLayers=[],_routeTimer=null;
-const COLORS=['#00e676','#00b0ff','#ffab00','#ff6e40','#e040fb','#40c4ff','#69f0ae','#ffd740','#ff6090','#a7ffeb'];
-
-function initMap(){
-  // Start with a world view; locateUser() will pan once we know where the user is
-  map=L.map('map',{zoomControl:true}).setView([20,0],2);
-  osmL=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:19}).addTo(map);
-  satL=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'© Esri',maxZoom:19});
-  map.on('click',e=>{if(addMode){addWP(e.latlng.lat,e.latlng.lng);exitAdd()}});
-  map.on('mousemove',e=>document.getElementById('mc').textContent=`${e.latlng.lat.toFixed(6)},  ${e.latlng.lng.toFixed(6)}`);
-  // Pan to best available location: tank GPS → browser geolocation → IP geolocation
-  locateUser();
-}
-function locateUser(){
-  if(navigator.geolocation){
-    // Watch position — fires immediately and on every subsequent update
-    navigator.geolocation.watchPosition(
-      pos=>{
-        const ll=[pos.coords.latitude,pos.coords.longitude];
-        moveUser(ll, pos.coords.accuracy);
-        // Only pan to user if the tank has no GPS fix yet
-        if(!lastGPS) map.setView(ll, 15);
-      },
-      ()=>{ ipLocate(); },
-      {enableHighAccuracy:true, timeout:10000, maximumAge:5000}
-    );
-  } else {
-    ipLocate();
-  }
-}
-function ipLocate(){
-  // IP geolocation fallback — city-level, no key required
-  fetch('https://ipapi.co/json/')
-    .then(r=>r.json())
-    .then(d=>{ if(!lastGPS && d.latitude) map.setView([d.latitude,d.longitude],12); })
-    .catch(()=>{});
-}
-function moveUser(ll, accuracy){
-  if(!map) return;
-  userLatLng = ll;
-  const icon = L.divIcon({className:'',iconSize:[18,18],iconAnchor:[9,9],
-    html:'<div style="width:18px;height:18px;border-radius:50%;background:rgba(0,176,255,.25);border:2.5px solid #00b0ff;box-shadow:0 0 0 3px rgba(0,176,255,.15)"></div>'});
-  if(!userMk){
-    userMk = L.marker(ll,{icon, zIndexOffset:900, title:'Your location'}).addTo(map);
-    userMk.bindTooltip('YOU', {permanent:false, direction:'top', className:'user-tip'});
-  } else {
-    userMk.setLatLng(ll);
-  }
-  // Accuracy circle (only show if accuracy > 20m, otherwise it's noise)
-  if(accuracy > 20){
-    if(!userAccCircle)
-      userAccCircle = L.circle(ll,{radius:accuracy, color:'#00b0ff', weight:1, fillOpacity:.06}).addTo(map);
-    else
-      userAccCircle.setLatLng(ll).setRadius(accuracy);
-  } else if(userAccCircle){
-    map.removeLayer(userAccCircle); userAccCircle=null;
-  }
-  // Update distance-to-tank in the map toolbar if both positions are known
-  if(lastGPS) updateUserTankDist(ll);
-}
-function updateUserTankDist(userLL){
-  const R=6371000, toRad=d=>d*Math.PI/180;
-  const [lat1,lon1]=userLL, [lat2,lon2]=lastGPS;
-  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  const dist=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  const el=document.getElementById('userDist');
-  if(!el) return;
-  el.textContent = dist<1000 ? `YOU ↔ TANK  ${dist.toFixed(0)} m` : `YOU ↔ TANK  ${(dist/1000).toFixed(2)} km`;
-  el.style.display='block';
-}
-function toggleSat(){satOn=!satOn;if(satOn){map.removeLayer(osmL);satL.addTo(map)}else{map.removeLayer(satL);osmL.addTo(map)}document.getElementById('satBtn').textContent=satOn?'MAP':'SATELLITE'}
-function ctrTank(){if(lastGPS)map.setView(lastGPS,18)}
-function ctrUser(){if(userLatLng)map.setView(userLatLng,17)}
-function fitAll(){if(!wps.length)return;map.fitBounds(L.latLngBounds(wps.map(w=>[w.lat,w.lng])),{padding:[50,50]})}
-function enterAdd(){addMode=true;document.getElementById('addbadge').classList.remove('hidden');map.getContainer().style.cursor='crosshair'}
-function exitAdd(){addMode=false;document.getElementById('addbadge').classList.add('hidden');map.getContainer().style.cursor=''}
-function moveTank(lat,lng){
-  if(!map)return;
-  const icon=L.divIcon({className:'',iconSize:[32,32],iconAnchor:[16,16],html:'<div style="width:32px;height:32px;border-radius:50%;background:rgba(0,230,118,.18);border:2px solid #00e676;display:flex;align-items:center;justify-content:center;font-size:18px">🚗</div>'});
-  if(!tankMk){
-    // First GPS fix — pan the map to the tank's position
-    tankMk=L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
-    map.setView([lat,lng],17);
-  } else tankMk.setLatLng([lat,lng]);
-}
-function mkIcon(i,action){
-  const c=COLORS[i%COLORS.length];
-  return L.divIcon({className:'',iconSize:[26,26],iconAnchor:[7,26],html:`<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${c};border:2px solid rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.5)"><span style="transform:rotate(45deg);font-size:11px;font-weight:bold;color:#0a0e1a">${i+1}</span></div>`});
-}
-function redrawMap(){
-  wpMks.forEach(m=>map.removeLayer(m));wpMks=[];
-  if(wpPoly){map.removeLayer(wpPoly);wpPoly=null}
-  // Clear route preview layers — redrawn by drawRouteLayer() after fetch
-  routeLayers.forEach(l=>map.removeLayer(l));routeLayers=[];
-  wps.forEach((wp,i)=>{
-    const mk=L.marker([wp.lat,wp.lng],{icon:mkIcon(i,wp.arrivalAction),draggable:true}).addTo(map)
-      .bindPopup(`<b style="color:var(--accent)">WP${i+1}: ${esc(wp.name)}</b><br><span style="color:var(--muted);font-size:11px">${wp.lat.toFixed(5)}, ${wp.lng.toFixed(5)}</span><br><span style="color:var(--warn);font-size:11px">▸ ${esc(wp.arrivalAction||'continue')}</span>`);
-    mk.on('click',()=>selWP(i));
-    mk.on('dragend',e=>{const ll=e.target.getLatLng();wps[i].lat=+ll.lat.toFixed(7);wps[i].lng=+ll.lng.toFixed(7);if(sel===i){document.getElementById('wLa').value=wps[i].lat;document.getElementById('wLg').value=wps[i].lng}redrawMap();scheduleRouteRefresh()});
-    wpMks.push(mk);
-  });
-  // Green dashed direct line only when auto-route is off
-  if(wps.length>1&&!autoRouteEnabled){const pts=wps.map(w=>[w.lat,w.lng]);if(document.getElementById('mRt').checked)pts.push(pts[0]);wpPoly=L.polyline(pts,{color:'#00e676',weight:2,opacity:.55,dashArray:'6,5'}).addTo(map)}
-  // Re-draw any existing route segments
-  if(autoRouteEnabled&&routeSegments) drawRouteLayer();
-}
-
-// ── Waypoints ──────────────────────────────────────────────────────────────
-let wps=[],sel=-1,ctr=1;
-const BDGE={continue:'bm MOVE',wait:'bw WAIT',scan:'bs SCAN',follow:'bf FLLOW',set_ptu:'bp PTU',custom:'bc CMD'};
-
-function addWP(lat,lng){
-  const wp={id:'wp_'+(ctr++),name:`WP ${wps.length+1}`,lat:+lat.toFixed(7),lng:+lng.toFixed(7),speed:+document.getElementById('mSp').value,arrivalRadius:3,arrivalAction:'continue',waitSeconds:5,scanFrom:-90,scanTo:90,scanSpeed:200,followDuration:0,ptuPan:0,ptuTilt:0,customCommand:'',notes:''};
-  wps.push(wp);redrawList();redrawMap();selWP(wps.length-1);
-  if(map&&wp.lat&&wp.lng)map.panTo([wp.lat,wp.lng]);
-  scheduleRouteRefresh();
-}
-function removeWP(i){wps.splice(i,1);if(sel>=wps.length)sel=wps.length-1;redrawList();redrawMap();if(sel>=0)selWP(sel);else document.getElementById('wed').classList.add('hidden');scheduleRouteRefresh()}
-function selWP(i){
-  sel=i;
-  document.querySelectorAll('.wp-item').forEach((e,j)=>e.classList.toggle('sel',j===i));
-  const wp=wps[i];if(!wp)return;
-  document.getElementById('wed').classList.remove('hidden');
-  document.getElementById('wen').textContent=i+1;
-  document.getElementById('wNm').value=wp.name;document.getElementById('wLa').value=wp.lat;document.getElementById('wLg').value=wp.lng;
-  document.getElementById('wSp').value=wp.speed||60;document.getElementById('wSv').textContent=(wp.speed||60)+'%';
-  document.getElementById('wRd').value=wp.arrivalRadius||3;document.getElementById('wAc').value=wp.arrivalAction||'continue';
-  document.getElementById('wWt').value=wp.waitSeconds||5;document.getElementById('wSF').value=wp.scanFrom??-90;
-  document.getElementById('wST').value=wp.scanTo??90;document.getElementById('wSS').value=wp.scanSpeed||200;
-  document.getElementById('wFD').value=wp.followDuration||0;document.getElementById('wPP').value=wp.ptuPan||0;
-  document.getElementById('wPT').value=wp.ptuTilt||0;document.getElementById('wCC').value=wp.customCommand||'';
-  document.getElementById('wNo').value=wp.notes||'';showAF();
-}
-function syncWP(){
-  if(sel<0||sel>=wps.length)return;const wp=wps[sel];
-  wp.name=document.getElementById('wNm').value;wp.speed=+document.getElementById('wSp').value;
-  wp.arrivalRadius=+document.getElementById('wRd').value||3;wp.arrivalAction=document.getElementById('wAc').value;
-  wp.waitSeconds=+document.getElementById('wWt').value||5;wp.scanFrom=+document.getElementById('wSF').value||-90;
-  wp.scanTo=+document.getElementById('wST').value||90;wp.scanSpeed=+document.getElementById('wSS').value||200;
-  wp.followDuration=+document.getElementById('wFD').value||0;wp.ptuPan=+document.getElementById('wPP').value||0;
-  wp.ptuTilt=+document.getElementById('wPT').value||0;wp.customCommand=document.getElementById('wCC').value;
-  wp.notes=document.getElementById('wNo').value;redrawList();redrawMap();
-}
-function syncCoords(){
-  if(sel<0)return;const lat=+document.getElementById('wLa').value,lng=+document.getElementById('wLg').value;
-  if(!isNaN(lat)&&!isNaN(lng)){wps[sel].lat=lat;wps[sel].lng=lng;redrawMap();scheduleRouteRefresh()}
-}
-function showAF(){
-  const v=document.getElementById('wAc').value;
-  ['wait','scan','follow','set_ptu','custom'].forEach(k=>document.getElementById('af-'+k).classList.toggle('show',k===v));
-}
-function redrawList(){
-  const c=document.getElementById('wpl');
-  c.querySelectorAll('.wp-item').forEach(e=>e.remove());
-  document.getElementById('wpe').style.display=wps.length?'none':'block';
-  document.getElementById('wpc').textContent=wps.length;
-  wps.forEach((wp,i)=>{
-    const el=document.createElement('div');el.className='wp-item'+(i===sel?' sel':'');
-    const[bc,bt]=(BDGE[wp.arrivalAction||'continue']||'bm MOVE').split(' ');
-    el.innerHTML=`<span class="wph">⠿</span><span class="wpn">${i+1}</span><span class="wpname">${wp.name}</span><span class="badge ${bc}">${bt}</span><button class="wpdel" onclick="event.stopPropagation();removeWP(${i})">✕</button>`;
-    el.addEventListener('click',()=>selWP(i));c.appendChild(el);
-  });
-  if(window._srt)window._srt.destroy();
-  window._srt=Sortable.create(c,{handle:'.wph',animation:120,onEnd:ev=>{const m=wps.splice(ev.oldIndex,1)[0];wps.splice(ev.newIndex,0,m);sel=ev.newIndex;redrawList();redrawMap();scheduleRouteRefresh()}});
-}
-
-// ── Mission CRUD ───────────────────────────────────────────────────────────
-let curId=null;
-function getMD(){return{id:curId,name:document.getElementById('mN').value||'Unnamed',type:document.getElementById('mT').value,loop:document.getElementById('mLp').checked,returnToStart:document.getElementById('mRt').checked,defaultSpeed:+document.getElementById('mSp').value,waypoints:wps}}
-async function saveM(){
-  const m=getMD();
-  const r=await fetch(m.id?`/api/missions/${m.id}`:`/api/missions`,{method:m.id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)});
-  const j=await r.json();if(!m.id&&j.id)curId=j.id;
-  alert(`Saved: ${m.name}`);
-}
-async function pushCurrent(btn){
-  if(!wps.length){alert('Add at least one waypoint first.');return}
-  await saveM();if(!curId)return;
-  const orig=btn.textContent;btn.textContent='…';btn.disabled=true;
-  try{
-    const body=autoRouteEnabled&&routeSegments?{waypoints:buildExpandedWaypoints()}:{};
-    const r=await fetch(`/api/missions/${curId}/push`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const j=await r.json();
-    btn.textContent=j.ok?'✓ SENT':'⚠ OFFLINE';
-    setTimeout(()=>{btn.textContent=orig;btn.disabled=false},2000);
-  }catch{btn.textContent=orig;btn.disabled=false}
-}
-async function runCurrent(){
-  if(!wps.length){alert('Add at least one waypoint first.');return}
-  await saveM();if(!curId)return;
-  const body=autoRouteEnabled&&routeSegments?{waypoints:buildExpandedWaypoints()}:{};
-  const r=await fetch(`/api/missions/${curId}/execute`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const j=await r.json();
-  if(j.ok)showBanner(document.getElementById('mN').value);
-  else alert('Mission queued — Jetson will execute when connected.');
-}
-function newM(){
-  curId=null;wps=[];sel=-1;ctr=1;
-  document.getElementById('mN').value='New Mission';document.getElementById('mT').value='patrol';
-  document.getElementById('mLp').checked=false;document.getElementById('mRt').checked=false;
-  document.getElementById('mSp').value=60;document.getElementById('mSv').textContent='60%';
-  document.getElementById('wed').classList.add('hidden');redrawList();redrawMap();
-}
-function loadMD(m){
-  curId=m.id;wps=m.waypoints||[];ctr=wps.length+1;sel=-1;
-  document.getElementById('mN').value=m.name||'';document.getElementById('mT').value=m.type||'custom';
-  document.getElementById('mLp').checked=!!m.loop;document.getElementById('mRt').checked=!!m.returnToStart;
-  document.getElementById('mSp').value=m.defaultSpeed||60;document.getElementById('mSv').textContent=(m.defaultSpeed||60)+'%';
-  document.getElementById('wed').classList.add('hidden');redrawList();redrawMap();
-  if(wps.length)setTimeout(fitAll,300);go('planner');
-}
-document.getElementById('mRt').addEventListener('change',()=>{redrawMap();scheduleRouteRefresh()});
-
-// ── Library ────────────────────────────────────────────────────────────────
-async function resumeById(id,btn){
-  const chk=await fetch(`/api/missions/${id}`);
-  if(!chk.ok){alert('Mission not found on Jetson — push it first.');return}
-  sendCmd(`mission_resume:${id}`);
-  const name=btn.closest('tr').querySelector('td').textContent;
-  showBanner(name,'ok');
-}
-async function loadLib(){
-  const tb=document.getElementById('libbody');
-  tb.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:16px;text-align:center">Loading…</td></tr>';
-  // Fetch both mission list and any saved resume state in parallel
-  const [list, stateRes] = await Promise.all([
-    fetch('/api/missions').then(r=>r.json()),
-    fetch('/api/missions/state').then(r=>r.ok?r.json():null).catch(()=>null)
-  ]);
-  const savedState = stateRes || {};  // {mission_id, waypoint_idx}
-  // Annotate list with resume info
-  list.forEach(m=>{
-    if(savedState.mission_id===m.id && savedState.waypoint_idx>0){
-      m._resumable=true; m._savedIdx=savedState.waypoint_idx;
-    }
-  });
-  if(!list.length){tb.innerHTML='<tr><td colspan="5" style="color:var(--muted);padding:16px;text-align:center">No missions saved yet.</td></tr>';return}
-  const tcls={patrol:'tp',search:'ts',escort:'te',surveillance:'tv2',custom:'tc'};
-  tb.innerHTML=list.map(m=>`<tr>
-    <td>${m.name}</td>
-    <td><span class="tbadge ${tcls[m.type]||'tc'}">${(m.type||'custom').toUpperCase()}</span></td>
-    <td>${m.waypointCount}</td>
-    <td>${m.updated?new Date(m.updated).toLocaleString():'—'}</td>
-    <td><div class="rowact">
-      <button class="btn btn-accent btn-sm" onclick="loadById('${m.id}')">EDIT</button>
-      <button class="btn btn-warn   btn-sm" onclick="pushById('${m.id}',this)">⬆ PUSH</button>
-      <button class="btn btn-blue   btn-sm" onclick="runById('${m.id}',this)">▶ RUN</button>
-      ${m._resumable?`<button class="btn btn-purple btn-sm" onclick="resumeById('${m.id}',this)" title="Resume from last saved waypoint WP${m._savedIdx}">↺ RESUME WP${m._savedIdx}</button>`:''}
-      <button class="btn btn-muted  btn-sm" onclick="expM('${m.id}','${m.name}')">↓ EXP</button>
-      <button class="btn btn-danger btn-sm" onclick="delM('${m.id}',this)">DEL</button>
-    </div></td>
-  </tr>`).join('');
-}
-async function loadById(id){const m=await fetch(`/api/missions/${id}`).then(r=>r.json());loadMD(m)}
-async function pushById(id,btn){
-  const orig=btn.textContent;btn.textContent='…';btn.disabled=true;
-  try{
-    const r=await fetch(`/api/missions/${id}/push`,{method:'POST'});
-    const j=await r.json();
-    btn.textContent=j.ok?'✓ SENT':'⚠ OFFLINE';
-    setTimeout(()=>{btn.textContent=orig;btn.disabled=false},2000);
-  }catch{btn.textContent=orig;btn.disabled=false}
-}
-async function runById(id,btn){
-  const r=await fetch(`/api/missions/${id}/execute`,{method:'POST'});const j=await r.json();
-  const name=btn.closest('tr').querySelector('td').textContent;
-  if(j.ok)showBanner(name);else alert('Jetson appears offline — mission queued.');
-}
-async function delM(id,btn){if(!confirm('Delete this mission?'))return;await fetch(`/api/missions/${id}`,{method:'DELETE'});btn.closest('tr').remove()}
-async function expM(id,name){
-  const m=await fetch(`/api/missions/${id}`).then(r=>r.json());
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(m,null,2)],{type:'application/json'}));
-  a.download=`mission_${(name||id).replace(/\s+/g,'_')}.json`;a.click();
-}
-function importM(inp){
-  const f=inp.files[0];if(!f)return;
-  const rd=new FileReader();
-  rd.onload=async e=>{try{const m=JSON.parse(e.target.result);m.id=null;await fetch('/api/missions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)});alert('Imported: '+m.name);loadLib()}catch{alert('Invalid mission file.')}};
-  rd.readAsText(f);inp.value='';
-}
-
-// ── Banner ─────────────────────────────────────────────────────────────────
-function showBanner(name,state='ok'){
-  const mb=document.getElementById('mb');
-  mb.classList.add('show');
-  mb.classList.toggle('fault',  state==='fault');
-  mb.classList.toggle('pending',state==='pending');
-  document.getElementById('mbt').textContent=(name||'').toUpperCase();
-  document.getElementById('skipBtn').style.display=(state==='ok')?'':'none';
-}
-function hideBanner(){
-  const mb=document.getElementById('mb');
-  mb.classList.remove('show','fault','pending');
-  document.getElementById('skipBtn').style.display='none';
-}
-async function abortM(){
-  const r=await fetch('/api/missions/abort',{method:'POST'});
-  const j=await r.json();
-  if(j.ok){hideBanner();clearMissionTarget();}
-  // If queued, the banner update comes via WebSocket mission_status:abort_pending
-}
-async function skipWP(){
-  sendCmd('mission_skip_wp');
-}
-
-// ── Mission target map marker ───────────────────────────────────────────────
-let missionTargetMk=null;
-function moveMissionTarget(lat,lon){
-  if(!map)return;
-  const icon=L.divIcon({className:'',iconSize:[20,20],iconAnchor:[10,10],html:'<div style="width:20px;height:20px;border-radius:50%;background:rgba(255,171,0,.25);border:2px solid #ffab00;box-shadow:0 0 8px #ffab00;animation:blink 1s infinite"></div>'});
-  if(!missionTargetMk)missionTargetMk=L.marker([lat,lon],{icon,zIndexOffset:900}).addTo(map);
-  else missionTargetMk.setLatLng([lat,lon]);
-}
-function clearMissionTarget(){if(missionTargetMk&&map){map.removeLayer(missionTargetMk);missionTargetMk=null}}
-
-// ── Stream: MJPEG for Chrome/Firefox/Android, snapshot polling for Safari/iOS ─
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-let snapshotTimer = null;
-
-function startStream() {
-  const img = document.getElementById('streamImg');
-  if (isSafari) {
-    // Safari doesn't support MJPEG in <img> — poll /snapshot at ~10 fps instead
-    img.src = '/snapshot?' + Date.now();
-  } else {
-    img.src = '/stream?' + Date.now();
-  }
-}
-
-function snapshotTick() {
-  if (!isSafari || !streamOnline) return;
-  const img = document.getElementById('streamImg');
-  const next = new Image();
-  next.onload  = () => { img.src = next.src; snapshotTimer = setTimeout(snapshotTick, 100); };
-  next.onerror = () => { streamErr(); };
-  next.src = '/snapshot?' + Date.now();
-}
-
-// ── Stream quality slider ───────────────────────────────────────────────────
-let sqDebounce = null;
-function onSQSlider(v) {
-  document.getElementById('sqVal').textContent = v;
-  clearTimeout(sqDebounce);
-  sqDebounce = setTimeout(() => sendCmd('stream_quality:' + v), 300);
-}
-
-// ── Stream ─────────────────────────────────────────────────────────────────
-let streamOnline = false;
-let streamRetryTimer = null;
-
-function streamOk() {
-  streamOnline = true;
-  document.getElementById('streamImg').style.display = 'block';
-  document.getElementById('streamPlaceholder').style.display = 'none';
-  const s = document.getElementById('streamStatus');
-  s.textContent = 'LIVE'; s.style.color = 'var(--accent)';
-  // Safari: kick off snapshot polling loop now that we have a good frame
-  if (isSafari) { clearTimeout(snapshotTimer); snapshotTimer = setTimeout(snapshotTick, 100); }
-}
-
-function streamErr() {
-  streamOnline = false;
-  clearTimeout(snapshotTimer);
-  document.getElementById('streamImg').style.display = 'none';
-  document.getElementById('streamPlaceholder').style.display = 'flex';
-  const s = document.getElementById('streamStatus');
-  s.textContent = 'NO SIGNAL'; s.style.color = 'var(--danger)';
-  scheduleStreamRetry(5000);
-}
-
-function scheduleStreamRetry(delay) {
-  clearTimeout(streamRetryTimer);
-  streamRetryTimer = setTimeout(() => startStream(), delay);
-}
-
-// ── Depth stream (auto-start) ─────────────────────────────────────────────────
-let depthRunning = true, depthOnline = false, depthSnapshotTimer = null, depthRetryTimer = null;
-
-// Depth quality slider
-let dqDebounce = null;
-function onDQSlider(v) {
-  document.getElementById('dqVal').textContent = v;
-  clearTimeout(dqDebounce);
-  dqDebounce = setTimeout(() => sendCmd('depth_quality:' + v), 300);
-}
-
-function startDepthStream() {
-  if (!depthRunning) return;
-  const img = document.getElementById('depthImg');
-  if (isSafari) {
-    img.src = '/depth_snapshot?' + Date.now();
-  } else {
-    img.src = '/depth_stream?' + Date.now();
-  }
-}
-
-function depthSnapshotTick() {
-  if (!isSafari || !depthRunning || !depthOnline) return;
-  const img = document.getElementById('depthImg');
-  const next = new Image();
-  next.onload  = () => { img.src = next.src; depthSnapshotTimer = setTimeout(depthSnapshotTick, 100); };
-  next.onerror = () => depthErr();
-  next.src = '/depth_snapshot?' + Date.now();
-}
-
-function depthOk() {
-  depthOnline = true;
-  document.getElementById('depthImg').style.display = 'block';
-  document.getElementById('depthPlaceholder').style.display = 'none';
-  document.getElementById('depthStatus').textContent = 'LIVE';
-  document.getElementById('depthStatus').style.color = 'var(--accent)';
-  if (isSafari) depthSnapshotTick();
-}
-
-function depthErr() {
-  depthOnline = false;
-  clearTimeout(depthSnapshotTimer);
-  document.getElementById('depthImg').style.display = 'none';
-  document.getElementById('depthPlaceholder').style.display = 'flex';
-  document.getElementById('depthPlaceholder').innerHTML =
-    '<div style="font-size:11px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>';
-  document.getElementById('depthStatus').textContent = 'NO SIGNAL';
-  document.getElementById('depthStatus').style.color = 'var(--danger)';
-  if (depthRunning) depthRetryTimer = setTimeout(startDepthStream, 4000);
-}
-
-// Stale-stream watchdog: MJPEG can silently freeze without firing onerror.
-// We periodically sample a pixel from the frame via a hidden canvas;
-// if it hasn't changed for 8 s the stream is frozen so we force a reconnect.
-let _staleCanvas, _staleCtx, _lastPixel = null, _staleCount = 0;
-function initStaleWatchdog() {
-  _staleCanvas = document.createElement('canvas');
-  _staleCanvas.width = _staleCanvas.height = 4;
-  _staleCtx = _staleCanvas.getContext('2d');
-}
-setInterval(() => {
-  if (!streamOnline) return;
-  const img = document.getElementById('streamImg');
-  if (!img.naturalWidth) return;
-  try {
-    _staleCtx.drawImage(img, 0, 0, 4, 4);
-    const px = _staleCtx.getImageData(0, 0, 1, 1).data.join(',');
-    if (px === _lastPixel) {
-      _staleCount++;
-      if (_staleCount >= 4) {   // 4 × 2 s = 8 s frozen
-        console.warn('[stream] Stale frame detected — reconnecting');
-        _staleCount = 0; _lastPixel = null;
-        streamErr();
-      }
-    } else {
-      _staleCount = 0; _lastPixel = px;
-    }
-  } catch {}
-}, 2000);
-
+<!-- Application JS (order matters: app -> widgets -> dashboard -> controls -> mission -> init) -->
+<script src="/js/app.js"></script>
+<script src="/js/widgets.js"></script>
+<script src="/js/dashboard.js"></script>
+<script src="/js/controls.js"></script>
+<script src="/js/mission.js"></script>
+<script>
 // ── Init ───────────────────────────────────────────────────────────────────
+initDashboard();   // Create widget DOM first
+initControls();    // Bind D-pad buttons (needs widget DOM)
 initMap();
 initStaleWatchdog();
 connectWS();
 startStream();
-// Auto-start depth stream
+loadTargets();
 sendCmd('stereo_start');
 setTimeout(startDepthStream, 3000);
 </script>

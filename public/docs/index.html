@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>UMBRIS - Documentation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 0; padding: 20px; }
+  a { color: #00b0ff; text-decoration: none; }
+  a:hover { text-decoration: underline; color: #40c4ff; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 50px 20px 30px; }
+  .hero h1 { color: #00e676; font-size: 42px; letter-spacing: 12px; margin: 0; }
+  .hero .tagline { color: #64748b; font-size: 14px; letter-spacing: 3px; margin-top: 8px; }
+  .hero .version { color: #334155; font-size: 11px; margin-top: 12px; }
+
+  /* Sections */
+  .section { max-width: 1100px; margin: 0 auto 50px; }
+  h2 { color: #00e676; letter-spacing: 3px; font-size: 16px; margin-bottom: 16px; border-bottom: 1px solid #1f2937; padding-bottom: 8px; }
+  h3 { color: #00b0ff; letter-spacing: 2px; font-size: 13px; margin-top: 24px; margin-bottom: 8px; }
+  p { font-size: 13px; line-height: 1.7; color: #cbd5e1; max-width: 800px; }
+
+  /* Hardware nodes */
+  .nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+  .node { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; }
+  .node:hover { border-color: #00e676; }
+  .node .label { color: #00e676; font-size: 12px; font-weight: bold; letter-spacing: 1px; }
+  .node .ip { color: #ffab00; font-size: 10px; margin-top: 4px; }
+  .node .desc { color: #94a3b8; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+  /* Capabilities grid */
+  .caps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 16px; }
+  .cap { background: #0d1220; border: 1px solid #1f2937; border-radius: 6px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px; }
+  .cap:hover { border-color: #00b0ff; }
+  .cap .icon { color: #00e676; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .cap .text { font-size: 11px; line-height: 1.5; }
+  .cap .text strong { color: #e2e8f0; }
+  .cap .text span { color: #94a3b8; }
+
+  /* Architecture SVG */
+  .arch-container { margin-top: 16px; overflow-x: auto; }
+  svg { background: #111827; border: 1px solid #1f2937; border-radius: 8px; display: block; margin: 0 auto; }
+
+  /* Docs index */
+  .docs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 16px; }
+  .doc-link { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 18px 20px; display: block; transition: border-color 0.2s; }
+  .doc-link:hover { border-color: #00e676; text-decoration: none; }
+  .doc-link .title { color: #00b0ff; font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+  .doc-link .file { color: #334155; font-size: 10px; margin-top: 4px; }
+  .doc-link .desc { color: #94a3b8; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+  /* Roadmap */
+  .roadmap { margin-top: 16px; }
+  .roadmap-cat { margin-bottom: 20px; }
+  .roadmap-cat h3 { margin-bottom: 6px; }
+  .roadmap-cat ul { list-style: none; padding: 0; margin: 0; }
+  .roadmap-cat li { font-size: 11px; color: #94a3b8; padding: 4px 0 4px 20px; position: relative; }
+  .roadmap-cat li::before { content: '\25cb'; position: absolute; left: 0; color: #334155; }
+
+  /* Footer */
+  .footer { text-align: center; color: #334155; font-size: 10px; margin-top: 60px; padding: 20px; border-top: 1px solid #1f2937; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+/* SVG pan/zoom wrapper */
+.svg-wrap{position:relative;overflow:hidden;touch-action:none;cursor:grab;border:1px solid #1f2937;border-radius:8px;margin:10px 0;background:#111827;user-select:none;-webkit-user-select:none}
+.svg-wrap.dragging{cursor:grabbing}
+.svg-wrap svg{display:block;transform-origin:0 0;will-change:transform}
+.svg-hint{position:absolute;bottom:6px;right:8px;font-family:'Courier New',monospace;font-size:9px;color:#334155;letter-spacing:1px;pointer-events:none;display:none}
+@media(max-width:900px){.svg-hint{display:block}}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- HERO                                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="hero">
+  <h1>UMBRIS</h1>
+  <div class="tagline">AUTONOMOUS GROUND VEHICLE COMMAND &amp; CONTROL PLATFORM</div>
+  <div class="version">Jetson Orin Super &middot; YOLOv8 &middot; ROS2 Humble &middot; Nav2 &middot; SLAM Toolbox</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- SYSTEM OVERVIEW                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>SYSTEM OVERVIEW</h2>
+  <p>
+    UMBRIS is an autonomous tracked vehicle platform built around an NVIDIA Jetson Orin Super.
+    It uses YOLOv8 with TensorRT for real-time object detection, BoTSORT with cosine-similarity
+    re-identification for persistent person tracking, and GPS waypoint navigation with
+    obstacle-aware path planning via ROS2 Nav2 and SLAM Toolbox. A 360-degree YDLIDAR provides
+    SLAM-based mapping and obstacle avoidance. The entire system is monitored and controlled
+    remotely through a mobile-friendly dark web UI hosted on a VPS, connected via WebSocket relay.
+    Stereo depth sensing and FLIR thermal imaging provide additional situational awareness.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- HARDWARE STACK                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>HARDWARE STACK</h2>
+  <div class="nodes">
+    <div class="node">
+      <div class="label">JETSON ORIN SUPER</div>
+      <div class="ip">192.168.1.167</div>
+      <div class="desc">
+        Central brain. Runs C++ detection app (YOLOv8 TensorRT), stereo depth,
+        SLAM, Nav2 path planning, behavior state machine, and all comms.
+      </div>
+    </div>
+    <div class="node">
+      <div class="label">VPS</div>
+      <div class="ip">87.106.188.134</div>
+      <div class="desc">
+        Cloud relay. Node.js web server hosts the control UI and
+        proxies WebSocket traffic between the browser and Jetson.
+      </div>
+    </div>
+    <div class="node">
+      <div class="label">CONTROL TEENSY 4.1</div>
+      <div class="ip">192.168.1.177:23</div>
+      <div class="desc">
+        Motor controller. Drives left/right tracks and pan-tilt unit (PTU)
+        via stepper motors. Receives wheel + PTU commands over TCP.
+      </div>
+    </div>
+    <div class="node">
+      <div class="label">SENSOR TEENSY 4.1</div>
+      <div class="ip">192.168.1.178:23</div>
+      <div class="desc">
+        Sensor hub. BNO085 9-DOF IMU, BN880 GPS, TOF distance sensor,
+        and wheel encoders. Streams data to Jetson over TCP.
+      </div>
+    </div>
+    <div class="node">
+      <div class="label">FLIR TAU THERMAL</div>
+      <div class="ip">192.168.0.71 (RTSP)</div>
+      <div class="desc">
+        Thermal imaging camera. RTSP stream grabbed by the Jetson
+        for night/low-light detection and situational awareness.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- KEY CAPABILITIES                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>KEY CAPABILITIES</h2>
+  <div class="caps">
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>YOLOv8 Real-Time Detection</strong><br><span>TensorRT-optimised inference at 28+ FPS on Jetson Orin</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>Person Re-Identification</strong><br><span>BoTSORT tracking + cosine similarity gallery (threshold 0.75) with persistent IDs</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>Person Follow Mode</strong><br><span>PID-based PTU + wheel tracking. Auto-follows identified targets</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>GPS Waypoint Missions</strong><br><span>Save, push, execute, abort, resume waypoints. Nav2 SmacPlanner2D for obstacle-aware paths</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>360&deg; LIDAR SLAM</strong><br><span>YDLIDAR X3 + SLAM Toolbox for real-time mapping and localisation</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>Stereo Depth Sensing</strong><br><span>CUDA StereoBM on 2560x720 stereo pair. ZMQ publish for ROS2 and MJPEG bridge</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>FLIR Thermal Imaging</strong><br><span>RTSP thermal camera feed for night/low-light and smoke/fog scenarios</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>Web Command &amp; Control</strong><br><span>Mobile-friendly dark UI: live map, mission planner, telemetry, radar, person gallery</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>System Monitoring</strong><br><span>CPU/GPU temp and usage, RAM, streamed to dashboard via generic sensor slots</span></div>
+    </div>
+    <div class="cap">
+      <div class="icon">&#9632;</div>
+      <div class="text"><strong>Behavior State Machine</strong><br><span>BehaviorCoordinator: Follow, Mission, Manual, Stopped modes with safe transitions</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- ARCHITECTURE DIAGRAM                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>ARCHITECTURE</h2>
+  <div class="arch-container">
+    <div class="svg-wrap"><div class="svg-hint">PINCH · DRAG · DBL-TAP RESET</div>
+    <svg width="900" height="480" viewBox="0 0 900 480" xmlns="http://www.w3.org/2000/svg">
+      <!-- Defs -->
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+        </marker>
+        <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#00e676"/>
+        </marker>
+        <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#00b0ff"/>
+        </marker>
+      </defs>
+
+      <!-- Background grid -->
+      <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1a2030" stroke-width="0.5"/>
+      </pattern>
+      <rect width="900" height="480" fill="url(#grid)"/>
+
+      <!-- ===== CAMERAS (left) ===== -->
+      <rect x="30" y="130" width="140" height="50" rx="6" fill="#0d1220" stroke="#ffab00" stroke-width="1.5"/>
+      <text x="100" y="152" text-anchor="middle" fill="#ffab00" font-family="Courier New" font-size="10" font-weight="bold">STEREO CAMERA</text>
+      <text x="100" y="168" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">2560x720 MJPEG</text>
+
+      <rect x="30" y="200" width="140" height="50" rx="6" fill="#0d1220" stroke="#ff6d00" stroke-width="1.5"/>
+      <text x="100" y="222" text-anchor="middle" fill="#ff6d00" font-family="Courier New" font-size="10" font-weight="bold">FLIR TAU</text>
+      <text x="100" y="238" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">RTSP thermal</text>
+
+      <rect x="30" y="280" width="140" height="50" rx="6" fill="#0d1220" stroke="#b47ffe" stroke-width="1.5"/>
+      <text x="100" y="302" text-anchor="middle" fill="#b47ffe" font-family="Courier New" font-size="10" font-weight="bold">YDLIDAR X3</text>
+      <text x="100" y="318" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">360 deg scan</text>
+
+      <!-- Camera/lidar arrows to Jetson -->
+      <line x1="170" y1="155" x2="240" y2="200" stroke="#475569" stroke-width="1" marker-end="url(#arrow)"/>
+      <line x1="170" y1="225" x2="240" y2="225" stroke="#475569" stroke-width="1" marker-end="url(#arrow)"/>
+      <line x1="170" y1="305" x2="240" y2="260" stroke="#475569" stroke-width="1" marker-end="url(#arrow)"/>
+
+      <!-- ===== JETSON (center) ===== -->
+      <rect x="245" y="100" width="260" height="260" rx="10" fill="#0d1220" stroke="#00e676" stroke-width="2"/>
+      <text x="375" y="125" text-anchor="middle" fill="#00e676" font-family="Courier New" font-size="13" font-weight="bold">JETSON ORIN SUPER</text>
+      <text x="375" y="140" text-anchor="middle" fill="#334155" font-family="Courier New" font-size="9">192.168.1.167</text>
+
+      <!-- Jetson internal blocks -->
+      <rect x="260" y="155" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="315" y="175" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">YOLOv8 TensorRT</text>
+
+      <rect x="380" y="155" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="435" y="175" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">Stereo Depth</text>
+
+      <rect x="260" y="197" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="315" y="217" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">SLAM Toolbox</text>
+
+      <rect x="380" y="197" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="435" y="217" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">Nav2 Planner</text>
+
+      <rect x="260" y="239" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="315" y="259" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">Behavior Coord</text>
+
+      <rect x="380" y="239" width="110" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="435" y="259" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">Person Re-ID</text>
+
+      <rect x="260" y="281" width="230" height="32" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="375" y="301" text-anchor="middle" fill="#e2e8f0" font-family="Courier New" font-size="9">Comms Hub (TCP + ZMQ + WebSocket)</text>
+
+      <rect x="260" y="323" width="230" height="26" rx="4" fill="#162030" stroke="#1f2937"/>
+      <text x="375" y="340" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="9">MJPEG Bridge :8080  |  slam_bridge :9997</text>
+
+      <!-- ===== TEENSYS (bottom) ===== -->
+      <rect x="200" y="410" width="160" height="55" rx="6" fill="#0d1220" stroke="#00b0ff" stroke-width="1.5"/>
+      <text x="280" y="432" text-anchor="middle" fill="#00b0ff" font-family="Courier New" font-size="10" font-weight="bold">SENSOR TEENSY</text>
+      <text x="280" y="445" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">192.168.1.178:23</text>
+      <text x="280" y="458" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="8">IMU + GPS + TOF + ENC</text>
+
+      <rect x="390" y="410" width="160" height="55" rx="6" fill="#0d1220" stroke="#00b0ff" stroke-width="1.5"/>
+      <text x="470" y="432" text-anchor="middle" fill="#00b0ff" font-family="Courier New" font-size="10" font-weight="bold">CONTROL TEENSY</text>
+      <text x="470" y="445" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">192.168.1.177:23</text>
+      <text x="470" y="458" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="8">Wheels + PTU</text>
+
+      <!-- Teensy arrows -->
+      <line x1="300" y1="410" x2="340" y2="365" stroke="#00b0ff" stroke-width="1" marker-end="url(#arrow-blue)"/>
+      <line x1="450" y1="410" x2="410" y2="365" stroke="#00b0ff" stroke-width="1" marker-end="url(#arrow-blue)"/>
+      <text x="310" y="393" fill="#334155" font-family="Courier New" font-size="8">TCP</text>
+      <text x="430" y="393" fill="#334155" font-family="Courier New" font-size="8">TCP</text>
+
+      <!-- ===== VPS (right) ===== -->
+      <rect x="600" y="170" width="160" height="80" rx="8" fill="#0d1220" stroke="#00e676" stroke-width="1.5"/>
+      <text x="680" y="198" text-anchor="middle" fill="#00e676" font-family="Courier New" font-size="11" font-weight="bold">VPS</text>
+      <text x="680" y="213" text-anchor="middle" fill="#64748b" font-family="Courier New" font-size="9">87.106.188.134</text>
+      <text x="680" y="230" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="9">Node.js + WS relay</text>
+
+      <!-- Jetson to VPS -->
+      <line x1="505" y1="210" x2="595" y2="210" stroke="#00e676" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+      <text x="550" y="204" text-anchor="middle" fill="#334155" font-family="Courier New" font-size="8">TCP :9999</text>
+
+      <!-- ===== BROWSER (far right) ===== -->
+      <rect x="720" y="310" width="150" height="65" rx="8" fill="#0d1220" stroke="#ffab00" stroke-width="1.5"/>
+      <text x="795" y="336" text-anchor="middle" fill="#ffab00" font-family="Courier New" font-size="11" font-weight="bold">BROWSER</text>
+      <text x="795" y="352" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="9">Web UI + Map</text>
+      <text x="795" y="365" text-anchor="middle" fill="#94a3b8" font-family="Courier New" font-size="9">Live Telemetry</text>
+
+      <!-- VPS to Browser -->
+      <line x1="740" y1="250" x2="775" y2="305" stroke="#ffab00" stroke-width="1" marker-end="url(#arrow)"/>
+      <text x="775" y="278" fill="#334155" font-family="Courier New" font-size="8">WebSocket</text>
+
+      <!-- MJPEG direct -->
+      <line x1="505" y1="300" x2="715" y2="345" stroke="#475569" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="610" y="312" fill="#334155" font-family="Courier New" font-size="8">MJPEG :8080</text>
+
+      <!-- Legend -->
+      <rect x="615" y="100" width="260" height="55" rx="4" fill="#0a0e1a" stroke="#1f2937"/>
+      <text x="625" y="116" fill="#475569" font-family="Courier New" font-size="9">Legend:</text>
+      <line x1="625" y1="130" x2="650" y2="130" stroke="#00e676" stroke-width="1.5"/>
+      <text x="655" y="134" fill="#64748b" font-family="Courier New" font-size="8">Status + commands</text>
+      <line x1="770" y1="130" x2="795" y2="130" stroke="#00b0ff" stroke-width="1.5"/>
+      <text x="800" y="134" fill="#64748b" font-family="Courier New" font-size="8">Sensor data</text>
+      <line x1="625" y1="145" x2="650" y2="145" stroke="#475569" stroke-width="1"/>
+      <text x="655" y="149" fill="#64748b" font-family="Courier New" font-size="8">Video / lidar</text>
+      <line x1="770" y1="145" x2="795" y2="145" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="800" y="149" fill="#64748b" font-family="Courier New" font-size="8">MJPEG stream</text>
+    </svg>
+</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DOCUMENTATION INDEX                                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>DOCUMENTATION</h2>
+  <div class="docs-grid">
+    <a class="doc-link" href="teensy_wiring.html">
+      <div class="title">TEENSY WIRING DIAGRAMS</div>
+      <div class="file">teensy_wiring.html</div>
+      <div class="desc">Pin-by-pin wiring tables and SVG diagrams for both Sensor and Control Teensy 4.1 boards. Includes power distribution and peripheral connections.</div>
+    </a>
+    <a class="doc-link" href="protocol_reference.html">
+      <div class="title">COMMUNICATION PROTOCOL REFERENCE</div>
+      <div class="file">protocol_reference.html</div>
+      <div class="desc">All TCP, WebSocket, and ZMQ message formats. Covers Teensy commands, VPS IPC, SLAM bridge JSON-line protocol, and browser WebSocket events.</div>
+    </a>
+    <a class="doc-link" href="config_reference.html">
+      <div class="title">CONFIGURATION REFERENCE</div>
+      <div class="file">config_reference.html</div>
+      <div class="desc">Compile-time defaults in config.h, runtime config.json parameters, ROS2 YAML configs for Nav2, EKF, and SLAM Toolbox.</div>
+    </a>
+    <a class="doc-link" href="deploy_quickstart.html">
+      <div class="title">BUILD &amp; DEPLOY QUICKSTART</div>
+      <div class="file">deploy_quickstart.html</div>
+      <div class="desc">Step-by-step deployment using paramiko SFTP. Covers Jetson C++ builds, VPS Node.js reload, and the unified start_tank.sh launcher.</div>
+    </a>
+    <a class="doc-link" href="troubleshooting.html">
+      <div class="title">TROUBLESHOOTING GUIDE</div>
+      <div class="file">troubleshooting.html</div>
+      <div class="desc">Common issues and solutions: camera FPS drops, Teensy connection failures, SLAM divergence, Nav2 planning failures, and GPS cold start drift.</div>
+    </a>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- FEATURE ROADMAP                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <h2>FEATURE ROADMAP</h2>
+  <div class="roadmap">
+
+    <div class="roadmap-cat">
+      <h3>SAFETY-CRITICAL</h3>
+      <ul>
+        <li>Watchdog failsafe -- Control Teensy auto-stops motors after 500ms no heartbeat</li>
+        <li>Geofence -- Virtual boundary checked in navigateTo(), abort on breach</li>
+        <li>Connection-loss behavior -- Configurable policy: continue / pause / return home</li>
+      </ul>
+    </div>
+
+    <div class="roadmap-cat">
+      <h3>COMMS UPGRADE</h3>
+      <ul>
+        <li>4G/5G modem -- Primary internet link replacing WiFi for field use</li>
+        <li>LoRa backup channel -- Emergency stop, GPS beacon, heartbeat (2-15 km range)</li>
+        <li>LoRa base station -- Handheld ESP32 controller with display and e-stop</li>
+      </ul>
+    </div>
+
+    <div class="roadmap-cat">
+      <h3>OPERATIONAL FEATURES</h3>
+      <ul>
+        <li>Return to home -- Auto-RTH on low battery, connection loss, or operator command</li>
+        <li>Battery monitoring -- Voltage divider to Sensor Teensy ADC, low-voltage alerts</li>
+        <li>Telemetry logging -- GPS track, sensor readings, mode transitions to disk</li>
+        <li>Video recording -- Save detection frames during missions for post-mission replay</li>
+        <li>OTA config update -- Live PID gains, speed limits, obstacle threshold tuning via web UI</li>
+      </ul>
+    </div>
+
+    <div class="roadmap-cat">
+      <h3>DETECTION &amp; BEHAVIOUR</h3>
+      <ul>
+        <li>Multi-person queue -- Auto-switch to next known person when target lost</li>
+        <li>Night/low-light mode -- Switch to FLIR thermal when visible-light confidence drops</li>
+        <li>Person heatmap -- GPS-tagged sightings overlaid on mission map</li>
+      </ul>
+    </div>
+
+    <div class="roadmap-cat">
+      <h3>ADDITIONAL SENSORS</h3>
+      <ul>
+        <li>BME680 -- Temperature, humidity, pressure, air quality index via I2C</li>
+        <li>MR60BHA2 60 GHz mmWave -- Vital signs (breathing + heart rate) on stationary targets</li>
+        <li>MQ-2 / MQ-7 gas sensors -- LPG, propane, hydrogen, carbon monoxide detection</li>
+        <li>Voice localisation mic array -- 4x INMP441 MEMS mics, GCC-PHAT TDOA bearing</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="footer">
+  UMBRIS DOCUMENTATION &middot; LAST UPDATED 2026-03-28
+</div>
+
+<script>
+// ── Table card layout ──────────────────────────────
+document.querySelectorAll('table').forEach(function(t){
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);t.style.margin='0';w.appendChild(t);
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+
+// ── SVG pinch-zoom + pan ───────────────────────────
+document.querySelectorAll('.svg-wrap').forEach(function(wrap){
+  var svg=wrap.querySelector('svg');
+  var scale=1,tx=0,ty=0;
+  var dragging=false,startX,startY,startTx,startTy;
+  var lastTap=0,lastDist=0;
+
+  function svgW(){return parseFloat(svg.getAttribute('width')||svg.viewBox.baseVal.width);}
+  function svgH(){return parseFloat(svg.getAttribute('height')||svg.viewBox.baseVal.height);}
+
+  function clamp(){
+    var sw=svgW()*scale, sh=svgH()*scale;
+    var mxTx=wrap.clientWidth*0.8, mnTx=-(sw-wrap.clientWidth*0.2);
+    var mxTy=wrap.clientHeight*0.8, mnTy=-(sh-wrap.clientHeight*0.2);
+    tx=Math.min(mxTx,Math.max(tx,mnTx));
+    ty=Math.min(mxTy,Math.max(ty,mnTy));
+  }
+
+  function apply(){svg.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';}
+
+  function reset(){
+    var vw=wrap.clientWidth;
+    scale=vw<svgW()?vw/svgW():1;
+    tx=0;ty=0;apply();
+  }
+
+  // Set container height = svg natural height on desktop, 280px on mobile
+  function initHeight(){
+    if(wrap.clientWidth>=svgW()){wrap.style.height=svgH()+'px';}
+    else{wrap.style.height='280px';}
+  }
+
+  setTimeout(function(){initHeight();reset();},0);
+  window.addEventListener('resize',function(){initHeight();reset();});
+
+  // Mouse wheel zoom
+  wrap.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var r=wrap.getBoundingClientRect();
+    var cx=e.clientX-r.left,cy=e.clientY-r.top;
+    var d=e.deltaY>0?0.85:1.18;
+    var ns=Math.max(0.15,Math.min(6,scale*d));
+    tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+    scale=ns;clamp();apply();
+  },{passive:false});
+
+  // Mouse drag
+  wrap.addEventListener('mousedown',function(e){
+    dragging=true;startX=e.clientX;startY=e.clientY;startTx=tx;startTy=ty;
+    wrap.classList.add('dragging');
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    tx=startTx+e.clientX-startX;ty=startTy+e.clientY-startY;
+    clamp();apply();
+  });
+  document.addEventListener('mouseup',function(){dragging=false;wrap.classList.remove('dragging');});
+  wrap.addEventListener('dblclick',reset);
+
+  // Touch
+  wrap.addEventListener('touchstart',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      startX=e.touches[0].clientX;startY=e.touches[0].clientY;startTx=tx;startTy=ty;
+      var now=Date.now();if(now-lastTap<300)reset();lastTap=now;
+    } else if(e.touches.length===2){
+      lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    }
+  },{passive:false});
+
+  wrap.addEventListener('touchmove',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      tx=startTx+e.touches[0].clientX-startX;ty=startTy+e.touches[0].clientY-startY;
+      clamp();apply();
+    } else if(e.touches.length===2){
+      var dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      var r=wrap.getBoundingClientRect();
+      var cx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+      var cy=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+      var ns=Math.max(0.15,Math.min(6,scale*dist/lastDist));
+      tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+      scale=ns;lastDist=dist;clamp();apply();
+    }
+  },{passive:false});
+});
+</script>
+</body>
+</html>

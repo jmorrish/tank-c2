@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>UMBRIS - Teensy Wiring Diagram</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 20px; }
+  h1 { color: #00e676; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px; }
+  h2 { color: #00b0ff; letter-spacing: 2px; font-size: 15px; margin-top: 40px; margin-bottom: 4px; }
+  .note { color: #64748b; font-size: 11px; margin-bottom: 12px; }
+  .section { margin-bottom: 50px; }
+
+  /* Pin table styling */
+  table { border-collapse: collapse; margin: 10px 0; }
+  th { background: #111827; color: #00b0ff; font-size: 11px; letter-spacing: 1px; padding: 6px 12px; border: 1px solid #1f2937; text-align: left; }
+  td { background: #0d1220; font-size: 11px; padding: 5px 12px; border: 1px solid #1f2937; }
+  .pin { color: #00e676; font-weight: bold; }
+  .serial { color: #ffab00; }
+  .device { color: #00b0ff; }
+  .pwr-3v3 { color: #ff6d00; }
+  .pwr-5v { color: #ff1744; }
+  .pwr-12v { color: #e65100; }
+  .pwr-gnd { color: #546e7a; }
+  .step { color: #b47ffe; }
+  .enc { color: #00e676; }
+  .ms { color: #ff80ab; }
+  .note-cell { color: #94a3b8; font-style: italic; }
+
+  /* Legend */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 15px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* SVG */
+  svg { background: #111827; border: 1px solid #1f2937; border-radius: 8px; display: block; margin: 10px 0; }
+
+  /* Power box */
+  .pwr-table td { font-size: 10px; padding: 4px 10px; }
+  .pwr-table th { font-size: 10px; padding: 4px 10px; }
+  .pwr-note { background: #1a0a0a; border: 1px solid #ff6d00; border-radius: 4px; padding: 8px 14px; font-size: 11px; color: #ff6d00; margin: 10px 0; display: inline-block; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+/* SVG pan/zoom wrapper */
+.svg-wrap{position:relative;overflow:hidden;touch-action:none;cursor:grab;border:1px solid #1f2937;border-radius:8px;margin:10px 0;background:#111827;user-select:none;-webkit-user-select:none}
+.svg-wrap.dragging{cursor:grabbing}
+.svg-wrap svg{display:block;transform-origin:0 0;will-change:transform}
+.svg-hint{position:absolute;bottom:6px;right:8px;font-family:'Courier New',monospace;font-size:9px;color:#334155;letter-spacing:1px;pointer-events:none;display:none}
+@media(max-width:900px){.svg-hint{display:block}}
+</style>
+</head>
+<body>
+
+<h1>UMBRIS - TEENSY WIRING DIAGRAMS</h1>
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#ffab00"></div>UART</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#b47ffe"></div>Stepper</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff80ab"></div>Microstep</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div>Encoder</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6d00"></div>3V3</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff1744"></div>5V / VIN</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#e65100"></div>12V motor</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#546e7a"></div>GND</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00b0ff"></div>Ethernet</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- SENSOR TEENSY                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>SENSOR TEENSY 4.1 &mdash; 192.168.1.178:23</h2>
+<p class="note">Body IMU, GPS, TOF distance, wheel encoders. NativeEthernet must init BEFORE Serial (DMA conflict).</p>
+
+<table>
+  <tr>
+    <th>Teensy Pin</th>
+    <th>Function</th>
+    <th>Wire To</th>
+    <th>Device</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="pin">14</td>
+    <td class="serial">TX3</td>
+    <td class="serial">→ BNO085 RX</td>
+    <td class="device">Body IMU</td>
+    <td class="note-cell">SH2-UART, 115200 baud</td>
+  </tr>
+  <tr>
+    <td class="pin">15</td>
+    <td class="serial">RX3</td>
+    <td class="serial">← BNO085 TX</td>
+    <td class="device">Body IMU</td>
+    <td class="note-cell">Receives YPR rotation vector</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">24</td>
+    <td class="serial">TX6</td>
+    <td class="serial">→ BN880 RX</td>
+    <td class="device">GPS</td>
+    <td class="note-cell">NMEA 115200 baud</td>
+  </tr>
+  <tr>
+    <td class="pin">25</td>
+    <td class="serial">RX6</td>
+    <td class="serial">← BN880 TX</td>
+    <td class="device">GPS</td>
+    <td class="note-cell">$GNGGA + $GNRMC forwarded</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">28</td>
+    <td class="serial">RX7</td>
+    <td class="serial">← TOF TX</td>
+    <td class="device">TOF Sensor</td>
+    <td class="note-cell">921600 baud, 16-byte binary frame</td>
+  </tr>
+  <tr>
+    <td class="pin">29</td>
+    <td class="serial">TX7</td>
+    <td class="serial">→ TOF RX</td>
+    <td class="device">TOF Sensor</td>
+    <td class="note-cell">0x57 header</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">33</td>
+    <td class="enc">ENC L-A</td>
+    <td class="enc">← Left encoder A</td>
+    <td class="device">Left Wheel Encoder</td>
+    <td class="note-cell">INPUT_PULLUP, interrupt on CHANGE</td>
+  </tr>
+  <tr>
+    <td class="pin">34</td>
+    <td class="enc">ENC L-B</td>
+    <td class="enc">← Left encoder B</td>
+    <td class="device">Left Wheel Encoder</td>
+    <td class="note-cell">Direction from B when A fires</td>
+  </tr>
+  <tr>
+    <td class="pin">36</td>
+    <td class="enc">ENC R-A</td>
+    <td class="enc">← Right encoder A</td>
+    <td class="device">Right Wheel Encoder</td>
+    <td class="note-cell">INPUT_PULLUP, interrupt on CHANGE</td>
+  </tr>
+  <tr>
+    <td class="pin">35</td>
+    <td class="enc">ENC R-B</td>
+    <td class="enc">← Right encoder B</td>
+    <td class="device">Right Wheel Encoder</td>
+    <td class="note-cell">Direction from B when A fires</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td style="color:#00b0ff;font-weight:bold">RJ45</td>
+    <td style="color:#00b0ff">Ethernet</td>
+    <td style="color:#00b0ff">→ Switch → Jetson</td>
+    <td class="device">Network</td>
+    <td class="note-cell">Static IP 192.168.1.178, TCP port 23</td>
+  </tr>
+</table>
+
+<h3 style="color:#ff6d00;font-size:12px;margin-top:20px;letter-spacing:1px">SENSOR TEENSY — POWER CONNECTIONS</h3>
+<table class="pwr-table">
+  <tr>
+    <th>Device</th>
+    <th>VCC / VIN</th>
+    <th>GND</th>
+    <th>Special Pins</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="device">BNO085 Body IMU</td>
+    <td class="pwr-3v3">VIN ← Teensy 3V3</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td><span class="pwr-gnd">PS0 → GND</span> , <span class="pwr-3v3">PS1 → 3V3</span></td>
+    <td class="note-cell">PS0+PS1 set SH2-UART mode. Must be wired before power-on.</td>
+  </tr>
+  <tr>
+    <td class="device">BN880 GPS</td>
+    <td class="pwr-3v3">VCC ← Teensy 3V3</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td>—</td>
+    <td class="note-cell">3.3V device. Do not connect to 5V.</td>
+  </tr>
+  <tr>
+    <td class="device">TOF Sensor</td>
+    <td class="pwr-5v">VCC ← Teensy VIN (5V)</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td>—</td>
+    <td class="note-cell">Needs 5V. UART TX is 3.3V-safe for Teensy RX.</td>
+  </tr>
+  <tr>
+    <td class="device">Wheel Encoders</td>
+    <td class="note-cell">N/A (pullup)</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td>—</td>
+    <td class="note-cell">INPUT_PULLUP — no external resistors needed. GND is encoder common.</td>
+  </tr>
+  <tr>
+    <td class="device">Teensy 4.1</td>
+    <td class="pwr-5v">VIN ← 5V supply</td>
+    <td class="pwr-gnd">GND ← supply GND</td>
+    <td>—</td>
+    <td class="note-cell">5V via USB or VIN pin. Onboard regulator provides 3V3.</td>
+  </tr>
+</table>
+
+<div class="pwr-note">
+  BNO085 mode select: <strong>PS0 = GND</strong>, <strong>PS1 = 3V3</strong> &rarr; SH2-UART mode (115200 baud).<br>
+  Both PS pins must be hardwired before power is applied. Other combinations select I2C/SPI modes.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- CONTROL TEENSY                                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>CONTROL TEENSY 4.1 &mdash; 192.168.1.177:23</h2>
+<p class="note">Wheel steppers (A4988), PTU pan/tilt steppers (A4988, 1/8 microstep), PTU IMU (BNO085). NativeEthernet must init BEFORE Serial (DMA conflict).</p>
+
+<table>
+  <tr>
+    <th>Teensy Pin</th>
+    <th>Function</th>
+    <th>Wire To</th>
+    <th>Device</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="pin">3</td>
+    <td class="step">PAN DIR</td>
+    <td class="step">→ A4988 DIR</td>
+    <td class="device">Pan Motor</td>
+    <td class="note-cell">AccelStepper::DRIVER. Limit: +/-90 deg hard stop</td>
+  </tr>
+  <tr>
+    <td class="pin">4</td>
+    <td class="step">PAN STEP</td>
+    <td class="step">→ A4988 STEP</td>
+    <td class="device">Pan Motor</td>
+    <td class="note-cell">1/8 microstep = 1600 steps/rev</td>
+  </tr>
+  <tr>
+    <td class="pin">5</td>
+    <td class="step">TILT DIR</td>
+    <td class="step">→ A4988 DIR</td>
+    <td class="device">Tilt Motor</td>
+    <td class="note-cell">AccelStepper::DRIVER</td>
+  </tr>
+  <tr>
+    <td class="pin">6</td>
+    <td class="step">TILT STEP</td>
+    <td class="step">→ A4988 STEP</td>
+    <td class="device">Tilt Motor</td>
+    <td class="note-cell">1/8 microstep = 1600 steps/rev</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">7</td>
+    <td class="ms">PAN MS1</td>
+    <td class="ms">→ A4988 MS1 (HIGH)</td>
+    <td class="device">Pan Driver</td>
+    <td rowspan="3" class="note-cell" style="vertical-align:middle">MS1=H, MS2=H, MS3=L<br>= 1/8 microstepping<br>(200 * 8 = 1600 steps/rev)</td>
+  </tr>
+  <tr>
+    <td class="pin">8</td>
+    <td class="ms">PAN MS2</td>
+    <td class="ms">→ A4988 MS2 (HIGH)</td>
+    <td class="device">Pan Driver</td>
+  </tr>
+  <tr>
+    <td class="pin">9</td>
+    <td class="ms">PAN MS3</td>
+    <td class="ms">→ A4988 MS3 (LOW)</td>
+    <td class="device">Pan Driver</td>
+  </tr>
+  <tr>
+    <td class="pin">10</td>
+    <td class="ms">TILT MS1</td>
+    <td class="ms">→ A4988 MS1 (HIGH)</td>
+    <td class="device">Tilt Driver</td>
+    <td rowspan="3" class="note-cell" style="vertical-align:middle">MS1=H, MS2=H, MS3=L<br>= 1/8 microstepping</td>
+  </tr>
+  <tr>
+    <td class="pin">11</td>
+    <td class="ms">TILT MS2</td>
+    <td class="ms">→ A4988 MS2 (HIGH)</td>
+    <td class="device">Tilt Driver</td>
+  </tr>
+  <tr>
+    <td class="pin">12</td>
+    <td class="ms">TILT MS3</td>
+    <td class="ms">→ A4988 MS3 (LOW)</td>
+    <td class="device">Tilt Driver</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">20</td>
+    <td class="serial">TX5</td>
+    <td class="serial">→ BNO085 RX</td>
+    <td class="device">PTU IMU</td>
+    <td class="note-cell">SH2-UART, 115200 baud</td>
+  </tr>
+  <tr>
+    <td class="pin">21</td>
+    <td class="serial">RX5</td>
+    <td class="serial">← BNO085 TX</td>
+    <td class="device">PTU IMU</td>
+    <td class="note-cell">PTU orientation feedback</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">38</td>
+    <td class="step">LEFT DIR</td>
+    <td class="step">→ A4988 DIR</td>
+    <td class="device">Left Wheel</td>
+    <td class="note-cell">AccelStepper::DRIVER</td>
+  </tr>
+  <tr>
+    <td class="pin">40</td>
+    <td class="step">LEFT STEP</td>
+    <td class="step">→ A4988 STEP</td>
+    <td class="device">Left Wheel</td>
+    <td class="note-cell"></td>
+  </tr>
+  <tr>
+    <td class="pin">41</td>
+    <td class="step">RIGHT DIR</td>
+    <td class="step">→ A4988 DIR</td>
+    <td class="device">Right Wheel</td>
+    <td class="note-cell">AccelStepper::DRIVER</td>
+  </tr>
+  <tr>
+    <td class="pin">39</td>
+    <td class="step">RIGHT STEP</td>
+    <td class="step">→ A4988 STEP</td>
+    <td class="device">Right Wheel</td>
+    <td class="note-cell"></td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td class="pin">33</td>
+    <td class="enc">ENC L-A</td>
+    <td class="enc">← Left encoder A</td>
+    <td class="device">Left Wheel Encoder</td>
+    <td class="note-cell">INPUT_PULLUP, interrupt on CHANGE</td>
+  </tr>
+  <tr>
+    <td class="pin">34</td>
+    <td class="enc">ENC L-B</td>
+    <td class="enc">← Left encoder B</td>
+    <td class="device">Left Wheel Encoder</td>
+    <td class="note-cell">Direction from B when A fires</td>
+  </tr>
+  <tr>
+    <td class="pin">35</td>
+    <td class="enc">ENC R-A</td>
+    <td class="enc">← Right encoder A</td>
+    <td class="device">Right Wheel Encoder</td>
+    <td class="note-cell">INPUT_PULLUP, interrupt on CHANGE</td>
+  </tr>
+  <tr>
+    <td class="pin">36</td>
+    <td class="enc">ENC R-B</td>
+    <td class="enc">← Right encoder B</td>
+    <td class="device">Right Wheel Encoder</td>
+    <td class="note-cell">Direction from B when A fires</td>
+  </tr>
+  <tr><td colspan="5" style="height:4px;padding:0;background:#111827;border:none"></td></tr>
+  <tr>
+    <td style="color:#00b0ff;font-weight:bold">RJ45</td>
+    <td style="color:#00b0ff">Ethernet</td>
+    <td style="color:#00b0ff">→ Switch → Jetson</td>
+    <td class="device">Network</td>
+    <td class="note-cell">Static IP 192.168.1.177, TCP port 23</td>
+  </tr>
+</table>
+
+<h3 style="color:#ff6d00;font-size:12px;margin-top:20px;letter-spacing:1px">CONTROL TEENSY — POWER CONNECTIONS</h3>
+<table class="pwr-table">
+  <tr>
+    <th>Device</th>
+    <th>VCC / VIN</th>
+    <th>GND</th>
+    <th>Special Pins</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="device">BNO085 PTU IMU</td>
+    <td class="pwr-3v3">VIN ← Teensy 3V3</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td><span class="pwr-gnd">PS0 → GND</span> , <span class="pwr-3v3">PS1 → 3V3</span></td>
+    <td class="note-cell">PS0+PS1 set SH2-UART mode. Must be wired before power-on.</td>
+  </tr>
+  <tr>
+    <td class="device">Pan A4988 Driver</td>
+    <td><span class="pwr-3v3">VDD ← Teensy 3V3</span> (logic)<br><span class="pwr-12v">VMOT ← 12V supply</span> (motor)</td>
+    <td class="pwr-gnd">GND ← shared with Teensy</td>
+    <td>—</td>
+    <td class="note-cell">MS1=H MS2=H MS3=L set by pins 7/8/9</td>
+  </tr>
+  <tr>
+    <td class="device">Tilt A4988 Driver</td>
+    <td><span class="pwr-3v3">VDD ← Teensy 3V3</span> (logic)<br><span class="pwr-12v">VMOT ← 12V supply</span> (motor)</td>
+    <td class="pwr-gnd">GND ← shared with Teensy</td>
+    <td>—</td>
+    <td class="note-cell">MS1=H MS2=H MS3=L set by pins 10/11/12</td>
+  </tr>
+  <tr>
+    <td class="device">Left Wheel A4988</td>
+    <td><span class="pwr-3v3">VDD ← Teensy 3V3</span> (logic)<br><span class="pwr-12v">VMOT ← 12V supply</span> (motor)</td>
+    <td class="pwr-gnd">GND ← shared with Teensy</td>
+    <td>—</td>
+    <td class="note-cell">No microstepping pins (full step)</td>
+  </tr>
+  <tr>
+    <td class="device">Right Wheel A4988</td>
+    <td><span class="pwr-3v3">VDD ← Teensy 3V3</span> (logic)<br><span class="pwr-12v">VMOT ← 12V supply</span> (motor)</td>
+    <td class="pwr-gnd">GND ← shared with Teensy</td>
+    <td>—</td>
+    <td class="note-cell">No microstepping pins (full step)</td>
+  </tr>
+  <tr>
+    <td class="device">Wheel Encoders</td>
+    <td class="note-cell">N/A (pullup)</td>
+    <td class="pwr-gnd">GND ← Teensy GND</td>
+    <td>—</td>
+    <td class="note-cell">INPUT_PULLUP — no external resistors. GND is encoder common.</td>
+  </tr>
+  <tr>
+    <td class="device">Teensy 4.1</td>
+    <td class="pwr-5v">VIN ← 5V supply</td>
+    <td class="pwr-gnd">GND ← supply GND</td>
+    <td>—</td>
+    <td class="note-cell">5V via USB or VIN. Onboard reg provides 3V3.</td>
+  </tr>
+</table>
+
+<div class="pwr-note">
+  BNO085 mode select: <strong>PS0 = GND</strong>, <strong>PS1 = 3V3</strong> &rarr; SH2-UART mode (115200 baud).<br>
+  Both PS pins must be hardwired before power is applied. Other combinations select I2C/SPI modes.
+</div>
+<div class="pwr-note" style="border-color: #e65100; color: #e65100;">
+  A4988 VMOT: <strong>12V motor supply</strong> with 100&micro;F decoupling cap near each driver.<br>
+  A4988 VDD: <strong>3V3 logic supply</strong> from Teensy. All driver GNDs must be common with Teensy GND.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- NETWORK TOPOLOGY (kept as SVG — it's clean enough)                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>SYSTEM NETWORK TOPOLOGY</h2>
+<p class="note">All local devices on 192.168.1.x subnet via Ethernet switch.</p>
+
+<div class="svg-wrap"><div class="svg-hint">PINCH · DRAG · DBL-TAP RESET</div>
+<svg width="880" height="280" viewBox="0 0 880 280">
+  <style>
+    .n-label { font-family: 'Courier New', monospace; font-size: 12px; fill: #00b0ff; font-weight: bold; }
+    .n-sub   { font-family: 'Courier New', monospace; font-size: 9px; fill: #64748b; }
+    .n-box   { fill: #0d1220; stroke: #1f2937; stroke-width: 1.5; rx: 6; }
+    .n-wire  { stroke: #00b0ff; stroke-width: 1.5; fill: none; }
+    .n-wire-wan { stroke: #00b0ff; stroke-width: 1.5; fill: none; stroke-dasharray: 5,3; }
+  </style>
+
+  <!-- Jetson (center top) -->
+  <rect class="n-box" x="310" y="15" width="260" height="90" style="stroke:#00e676"/>
+  <text class="n-label" x="440" y="40" text-anchor="middle" fill="#00e676">JETSON ORIN SUPER</text>
+  <text class="n-sub" x="440" y="56" text-anchor="middle">192.168.1.167</text>
+  <text class="n-sub" x="440" y="70" text-anchor="middle">C++ app | Stereo cam (USB)</text>
+  <text class="n-sub" x="440" y="84" text-anchor="middle">YDLIDAR X3 (USB) | SLAM | Nav2</text>
+
+  <!-- Sensor Teensy -->
+  <rect class="n-box" x="20" y="160" width="200" height="70"/>
+  <text class="n-label" x="120" y="185" text-anchor="middle">SENSOR TEENSY</text>
+  <text class="n-sub" x="120" y="200" text-anchor="middle">192.168.1.178 : 23</text>
+  <text class="n-sub" x="120" y="214" text-anchor="middle">IMU | GPS | TOF | Encoders</text>
+  <line class="n-wire" x1="120" y1="160" x2="370" y2="105"/>
+  <text class="n-sub" x="225" y="130" text-anchor="middle" fill="#00b0ff">TCP :23</text>
+
+  <!-- Control Teensy -->
+  <rect class="n-box" x="250" y="160" width="200" height="70"/>
+  <text class="n-label" x="350" y="185" text-anchor="middle">CONTROL TEENSY</text>
+  <text class="n-sub" x="350" y="200" text-anchor="middle">192.168.1.177 : 23</text>
+  <text class="n-sub" x="350" y="214" text-anchor="middle">Wheels | PTU | PTU IMU</text>
+  <line class="n-wire" x1="350" y1="160" x2="410" y2="105"/>
+  <text class="n-sub" x="395" y="138" text-anchor="middle" fill="#00b0ff">TCP :23</text>
+
+  <!-- FLIR -->
+  <rect class="n-box" x="480" y="160" width="180" height="70"/>
+  <text class="n-label" x="570" y="185" text-anchor="middle">FLIR TAU</text>
+  <text class="n-sub" x="570" y="200" text-anchor="middle">192.168.1.71</text>
+  <text class="n-sub" x="570" y="214" text-anchor="middle">Thermal RTSP camera</text>
+  <line class="n-wire" x1="540" y1="160" x2="490" y2="105"/>
+  <text class="n-sub" x="530" y="138" text-anchor="middle" fill="#ffab00">RTSP</text>
+
+  <!-- VPS -->
+  <rect class="n-box" x="690" y="160" width="170" height="70"/>
+  <text class="n-label" x="775" y="185" text-anchor="middle">VPS</text>
+  <text class="n-sub" x="775" y="200" text-anchor="middle">87.106.188.134</text>
+  <text class="n-sub" x="775" y="214" text-anchor="middle">Node.js | Web UI | Relay</text>
+  <line class="n-wire-wan" x1="570" y1="55" x2="700" y2="175"/>
+  <text class="n-sub" x="660" y="100" text-anchor="middle" fill="#00b0ff">TCP :9999</text>
+  <text class="n-sub" x="660" y="112" text-anchor="middle" fill="#00b0ff">(Tailscale VPN)</text>
+
+  <!-- Switch -->
+  <rect x="150" y="248" width="420" height="22" rx="4" fill="#111827" stroke="#1f2937"/>
+  <text class="n-sub" x="360" y="263" text-anchor="middle" fill="#546e7a">Ethernet switch — 192.168.1.x subnet</text>
+</svg>
+</div>
+</div>
+
+<script>
+// ── Table card layout ──────────────────────────────
+document.querySelectorAll('table').forEach(function(t){
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);t.style.margin='0';w.appendChild(t);
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+
+// ── SVG pinch-zoom + pan ───────────────────────────
+document.querySelectorAll('.svg-wrap').forEach(function(wrap){
+  var svg=wrap.querySelector('svg');
+  var scale=1,tx=0,ty=0;
+  var dragging=false,startX,startY,startTx,startTy;
+  var lastTap=0,lastDist=0;
+
+  function svgW(){return parseFloat(svg.getAttribute('width')||svg.viewBox.baseVal.width);}
+  function svgH(){return parseFloat(svg.getAttribute('height')||svg.viewBox.baseVal.height);}
+
+  function clamp(){
+    var sw=svgW()*scale, sh=svgH()*scale;
+    var mxTx=wrap.clientWidth*0.8, mnTx=-(sw-wrap.clientWidth*0.2);
+    var mxTy=wrap.clientHeight*0.8, mnTy=-(sh-wrap.clientHeight*0.2);
+    tx=Math.min(mxTx,Math.max(tx,mnTx));
+    ty=Math.min(mxTy,Math.max(ty,mnTy));
+  }
+
+  function apply(){svg.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';}
+
+  function reset(){
+    var vw=wrap.clientWidth;
+    scale=vw<svgW()?vw/svgW():1;
+    tx=0;ty=0;apply();
+  }
+
+  // Set container height = svg natural height on desktop, 280px on mobile
+  function initHeight(){
+    if(wrap.clientWidth>=svgW()){wrap.style.height=svgH()+'px';}
+    else{wrap.style.height='280px';}
+  }
+
+  setTimeout(function(){initHeight();reset();},0);
+  window.addEventListener('resize',function(){initHeight();reset();});
+
+  // Mouse wheel zoom
+  wrap.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var r=wrap.getBoundingClientRect();
+    var cx=e.clientX-r.left,cy=e.clientY-r.top;
+    var d=e.deltaY>0?0.85:1.18;
+    var ns=Math.max(0.15,Math.min(6,scale*d));
+    tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+    scale=ns;clamp();apply();
+  },{passive:false});
+
+  // Mouse drag
+  wrap.addEventListener('mousedown',function(e){
+    dragging=true;startX=e.clientX;startY=e.clientY;startTx=tx;startTy=ty;
+    wrap.classList.add('dragging');
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    tx=startTx+e.clientX-startX;ty=startTy+e.clientY-startY;
+    clamp();apply();
+  });
+  document.addEventListener('mouseup',function(){dragging=false;wrap.classList.remove('dragging');});
+  wrap.addEventListener('dblclick',reset);
+
+  // Touch
+  wrap.addEventListener('touchstart',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      startX=e.touches[0].clientX;startY=e.touches[0].clientY;startTx=tx;startTy=ty;
+      var now=Date.now();if(now-lastTap<300)reset();lastTap=now;
+    } else if(e.touches.length===2){
+      lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    }
+  },{passive:false});
+
+  wrap.addEventListener('touchmove',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      tx=startTx+e.touches[0].clientX-startX;ty=startTy+e.touches[0].clientY-startY;
+      clamp();apply();
+    } else if(e.touches.length===2){
+      var dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      var r=wrap.getBoundingClientRect();
+      var cx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+      var cy=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+      var ns=Math.max(0.15,Math.min(6,scale*dist/lastDist));
+      tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+      scale=ns;lastDist=dist;clamp();apply();
+    }
+  },{passive:false});
+});
+</script>
+</body>
+</html>

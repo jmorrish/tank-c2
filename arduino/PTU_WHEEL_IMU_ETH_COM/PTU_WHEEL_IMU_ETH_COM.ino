@@ -48,12 +48,18 @@ AccelStepper tiltMotor(AccelStepper::DRIVER, TILT_STEP_PIN, TILT_DIR_PIN);
 
 // ------- PTU MODE -------
 bool  velocityMode     = false;
-float panCurrentSpeed  = 0.0f;
+float panTargetSpeed   = 0.0f;   // what the command asked for
+float tiltTargetSpeed  = 0.0f;
+float panCurrentSpeed  = 0.0f;   // ramped actual speed
 float tiltCurrentSpeed = 0.0f;
+const float PTU_ACCEL  = 12000.0f; // steps/s² ramp rate
+unsigned long lastPtuUs = 0;
+unsigned long lastPtuCmdMs = 0;
+const unsigned long PTU_TIMEOUT_MS = 30000; // zero PTU if no command for 500ms
 
 // ------- Ethernet -------
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-IPAddress ip(192, 168, 0, 177);
+IPAddress ip(192, 168, 1, 177);
 EthernetServer server(23);
 EthernetClient client;
 String command;
@@ -68,9 +74,9 @@ static inline void dirGuardIfReversing(float newS, float oldS) {
 // Dynamic acceleration profile
 float getAccelForSpeed(float speed) {
     float absSpeed = fabsf(speed);
-    float minAccel = 12000.0f;     // <-- doubled
-    float maxAccel = 24000.0f;    // <-- doubled
-    float maxSpeed = 25000.0f;
+    float minAccel = 6000.0f;     // <-- doubled
+    float maxAccel = 6000.0f;    // <-- doubled
+    float maxSpeed = 7000.0f;
     if (absSpeed >= maxSpeed) return minAccel;
     return maxAccel - (absSpeed / maxSpeed) * (maxAccel - minAccel);
 }
@@ -97,12 +103,11 @@ void processPTUIMUCommand(const String& cmd, Print& c) {
     velocityMode = true;
     String subPan  = cmd.substring(2, cmd.indexOf('T'));
     String subTilt = cmd.substring(cmd.indexOf('T') + 1);
-    panCurrentSpeed  = subPan.toFloat();
-    tiltCurrentSpeed = subTilt.toFloat();
-    panMotor.setSpeed(panCurrentSpeed);
-    tiltMotor.setSpeed(tiltCurrentSpeed);
-    c.print("C VelocityMode PanSpeed="); c.print(panCurrentSpeed);
-    c.print(" TiltSpeed="); c.println(tiltCurrentSpeed);
+    panTargetSpeed  = subPan.toFloat();
+    tiltTargetSpeed = subTilt.toFloat();
+    lastPtuCmdMs = millis();
+    c.print("C VelocityMode PanTarget="); c.print(panTargetSpeed);
+    c.print(" TiltTarget="); c.println(tiltTargetSpeed);
     return;
   }
   if (cmd.startsWith("P") && cmd.indexOf('T') != -1) {
@@ -240,6 +245,7 @@ void setup() {
   Serial.begin(115200);
   leftWheel.lastUs = micros(); leftWheel.last_enc_us = leftWheel.lastUs; leftWheel.enc_last = leftWheel.encoder.read();
   rightWheel.lastUs = micros(); rightWheel.last_enc_us = rightWheel.lastUs; rightWheel.enc_last = rightWheel.encoder.read();
+  lastPtuUs = micros(); lastPtuCmdMs = millis();
   Serial.println("Wheels: 'LS<spd>RS<spd>', 'LT<0|1>RT<0|1>', legacy 'S','T' for left. PTU/IMU: VP,P,IMUON,IMUOFF,IMURATE.");
 
   // Important: Set max speed/min pulse width for wheel steppers!
@@ -253,7 +259,7 @@ void setup() {
   pinMode(PAN_MS1_PIN, OUTPUT); pinMode(PAN_MS2_PIN, OUTPUT); pinMode(PAN_MS3_PIN, OUTPUT);
   pinMode(TILT_MS1_PIN, OUTPUT); pinMode(TILT_MS2_PIN, OUTPUT); pinMode(TILT_MS3_PIN, OUTPUT);
   digitalWrite(PAN_MS1_PIN, HIGH); digitalWrite(PAN_MS2_PIN, HIGH); digitalWrite(PAN_MS3_PIN, LOW);
-  digitalWrite(TILT_MS1_PIN, HIGH); digitalWrite(TILT_MS2_PIN, HIGH); digitalWrite(TILT_MS3_PIN, LOW);
+  digitalWrite(TILT_MS1_PIN, LOW); digitalWrite(TILT_MS2_PIN, LOW); digitalWrite(TILT_MS3_PIN, LOW);
   panMotor.setMaxSpeed(12000); panMotor.setAcceleration(15000); panMotor.setMinPulseWidth(1);
   tiltMotor.setMaxSpeed(12000); tiltMotor.setAcceleration(15000); tiltMotor.setMinPulseWidth(1);
 
@@ -373,6 +379,30 @@ void loop() {
 
   // ----------- PTU CONTROL -----------
   if (velocityMode) {
+    // Watchdog: zero targets if no VP command received recently
+    if (millis() - lastPtuCmdMs > PTU_TIMEOUT_MS) {
+      panTargetSpeed  = 0.0f;
+      tiltTargetSpeed = 0.0f;
+    }
+
+    // Ramp actual speed towards target
+    unsigned long nowPtu = micros();
+    float dtPtu = (nowPtu - lastPtuUs) / 1e6f;
+    lastPtuUs = nowPtu;
+    if (dtPtu > 0.0f && dtPtu < 0.1f) { // sanity guard
+      float delta = PTU_ACCEL * dtPtu;
+
+      if (panCurrentSpeed < panTargetSpeed)
+        panCurrentSpeed = fminf(panCurrentSpeed + delta, panTargetSpeed);
+      else if (panCurrentSpeed > panTargetSpeed)
+        panCurrentSpeed = fmaxf(panCurrentSpeed - delta, panTargetSpeed);
+
+      if (tiltCurrentSpeed < tiltTargetSpeed)
+        tiltCurrentSpeed = fminf(tiltCurrentSpeed + delta, tiltTargetSpeed);
+      else if (tiltCurrentSpeed > tiltTargetSpeed)
+        tiltCurrentSpeed = fmaxf(tiltCurrentSpeed - delta, tiltTargetSpeed);
+    }
+
     panMotor.setSpeed(panCurrentSpeed);
     tiltMotor.setSpeed(tiltCurrentSpeed);
     panMotor.runSpeed();

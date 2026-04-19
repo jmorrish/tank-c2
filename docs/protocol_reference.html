@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Tank C2 - Communication Protocol Reference</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 20px; }
+  h1 { color: #00e676; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px; }
+  h2 { color: #00b0ff; letter-spacing: 2px; font-size: 15px; margin-top: 50px; margin-bottom: 4px; }
+  h3 { color: #ffab00; letter-spacing: 1px; font-size: 13px; margin-top: 25px; margin-bottom: 6px; }
+  .note { color: #64748b; font-size: 11px; margin-bottom: 12px; }
+  .section { margin-bottom: 50px; }
+  p { font-size: 12px; line-height: 1.6; margin: 6px 0; }
+
+  /* Table styling */
+  table { border-collapse: collapse; margin: 10px 0; width: 100%; max-width: 1100px; }
+  th { background: #111827; color: #00b0ff; font-size: 11px; letter-spacing: 1px; padding: 6px 12px; border: 1px solid #1f2937; text-align: left; }
+  td { background: #0d1220; font-size: 11px; padding: 5px 12px; border: 1px solid #1f2937; vertical-align: top; }
+
+  /* Colour classes */
+  .msg    { color: #00e676; font-weight: bold; }
+  .dir    { color: #ffab00; }
+  .field  { color: #00b0ff; }
+  .type   { color: #b47ffe; }
+  .val    { color: #e2e8f0; }
+  .proto  { color: #ff80ab; }
+  .port   { color: #ff6d00; font-weight: bold; }
+  .note-cell { color: #94a3b8; font-style: italic; }
+  .warn   { color: #ff1744; }
+
+  /* Code blocks */
+  code, .code { background: #111827; border: 1px solid #1f2937; border-radius: 3px; padding: 1px 5px; font-size: 11px; color: #00e676; }
+  pre { background: #111827; border: 1px solid #1f2937; border-radius: 5px; padding: 10px 14px; font-size: 11px; color: #e2e8f0; overflow-x: auto; margin: 8px 0; line-height: 1.5; }
+  pre .k { color: #00b0ff; }
+  pre .s { color: #00e676; }
+  pre .n { color: #ffab00; }
+  pre .c { color: #64748b; }
+
+  /* Legend */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 15px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* Info boxes */
+  .info-box { background: #0d1220; border: 1px solid #1f2937; border-radius: 5px; padding: 10px 14px; margin: 10px 0; }
+  .info-box.warn { border-color: #ff6d00; }
+  .info-box.warn .info-title { color: #ff6d00; }
+  .info-title { font-size: 10px; letter-spacing: 2px; color: #00b0ff; margin-bottom: 6px; }
+
+  /* TOC */
+  .toc { background: #111827; border: 1px solid #1f2937; border-radius: 5px; padding: 14px 18px; margin: 15px 0; display: inline-block; }
+  .toc a { color: #00b0ff; text-decoration: none; font-size: 12px; display: block; padding: 3px 0; }
+  .toc a:hover { color: #00e676; }
+  .toc .toc-num { color: #ffab00; display: inline-block; width: 26px; }
+
+  /* SVG */
+  svg { background: #111827; border: 1px solid #1f2937; border-radius: 8px; display: block; margin: 10px 0; }
+
+  /* Separator */
+  hr { border: none; border-top: 1px solid #1f2937; margin: 30px 0; }
+
+  .spacer { height: 4px; padding: 0; background: #111827; border: none; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+/* SVG pan/zoom wrapper */
+.svg-wrap{position:relative;overflow:hidden;touch-action:none;cursor:grab;border:1px solid #1f2937;border-radius:8px;margin:10px 0;background:#111827;user-select:none;-webkit-user-select:none}
+.svg-wrap.dragging{cursor:grabbing}
+.svg-wrap svg{display:block;transform-origin:0 0;will-change:transform}
+.svg-hint{position:absolute;bottom:6px;right:8px;font-family:'Courier New',monospace;font-size:9px;color:#334155;letter-spacing:1px;pointer-events:none;display:none}
+@media(max-width:900px){.svg-hint{display:block}}
+</style>
+</head>
+<body>
+
+<h1>TANK C2 &mdash; COMMUNICATION PROTOCOL REFERENCE</h1>
+<div class="note">Complete message format reference for all inter-node communication. Generated from source code analysis.</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div>Message / Command</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffab00"></div>Direction</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00b0ff"></div>Field / Endpoint</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#b47ffe"></div>Data Type</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff80ab"></div>Protocol</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6d00"></div>Port</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- TABLE OF CONTENTS                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="toc">
+  <div style="font-size:10px;letter-spacing:2px;color:#64748b;margin-bottom:8px">TABLE OF CONTENTS</div>
+  <a href="#sensor-tx"><span class="toc-num">1.</span> Sensor Teensy &rarr; Jetson (TCP :23)</a>
+  <a href="#sensor-rx"><span class="toc-num">2.</span> Jetson &rarr; Sensor Teensy (TCP :23)</a>
+  <a href="#control-tx"><span class="toc-num">3.</span> Control Teensy &rarr; Jetson (TCP :23)</a>
+  <a href="#control-rx"><span class="toc-num">4.</span> Jetson &rarr; Control Teensy (TCP :23)</a>
+  <a href="#jetson-vps"><span class="toc-num">5.</span> Jetson &rarr; VPS Status JSON (TCP :9999)</a>
+  <a href="#vps-jetson"><span class="toc-num">6.</span> VPS &rarr; Jetson Web Commands (TCP :9999)</a>
+  <a href="#jetson-events"><span class="toc-num">7.</span> Jetson &rarr; VPS Event Lines (TCP :9999)</a>
+  <a href="#ws"><span class="toc-num">8.</span> WebSocket Browser &harr; VPS (:3000)</a>
+  <a href="#slam"><span class="toc-num">9.</span> SLAM Bridge Protocol (TCP :9997)</a>
+  <a href="#zmq"><span class="toc-num">10.</span> ZMQ Pub/Sub Ports</a>
+  <a href="#mjpeg"><span class="toc-num">11.</span> MJPEG Bridge HTTP Endpoints (:8080)</a>
+  <a href="#vps-http"><span class="toc-num">12.</span> VPS HTTP API Endpoints (:3000)</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. SENSOR TEENSY → JETSON                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="sensor-tx">
+<h2>1. SENSOR TEENSY &rarr; JETSON</h2>
+<p class="note">TCP 192.168.1.178:23 &mdash; newline-delimited ASCII. Parsed in comms.cpp sensorRxLoop callback.</p>
+
+<table>
+  <tr>
+    <th>Message</th>
+    <th>Format</th>
+    <th>Fields</th>
+    <th>Rate</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">SENSOR_READY</td>
+    <td><code>SENSOR_READY\n</code></td>
+    <td>&mdash;</td>
+    <td>Once</td>
+    <td class="note-cell">Sent on new client connect. Triggers IMU_ON + IMU_RATE from Jetson.</td>
+  </tr>
+  <tr><td colspan="5" class="spacer"></td></tr>
+  <tr>
+    <td class="msg">YPR</td>
+    <td><code>YPR &lt;yaw&gt; &lt;pitch&gt; &lt;roll&gt;\n</code></td>
+    <td><span class="field">yaw</span> <span class="type">float</span> degrees<br>
+        <span class="field">pitch</span> <span class="type">float</span> degrees<br>
+        <span class="field">roll</span> <span class="type">float</span> degrees</td>
+    <td>50 Hz (default)</td>
+    <td class="note-cell">BNO085 body IMU rotation vector. Space-separated. Also forwarded to slam_bridge as imu_data JSON.</td>
+  </tr>
+  <tr><td colspan="5" class="spacer"></td></tr>
+  <tr>
+    <td class="msg">$GNGGA</td>
+    <td><code>$GNGGA,hhmmss.ss,lat,N/S,lon,E/W,quality,sats,hdop,alt,M,...*XX\n</code></td>
+    <td>Standard NMEA GGA fields. Validated via XOR checksum.</td>
+    <td>1 Hz</td>
+    <td class="note-cell">BN880 GPS fix. Also accepts $GPGGA. Parsed for lat/lon/alt/quality/sats. Forwarded to slam_bridge as gps_data JSON.</td>
+  </tr>
+  <tr>
+    <td class="msg">$GNRMC</td>
+    <td><code>$GNRMC,hhmmss.ss,A/V,lat,N/S,lon,E/W,speed,course,...*XX\n</code></td>
+    <td><span class="field">speed</span> knots, <span class="field">course</span> degrees true</td>
+    <td>1 Hz</td>
+    <td class="note-cell">Also accepts $GPRMC. Validated via checksum. Only processed if status=A (active). Forwarded to slam_bridge as gps_rmc JSON.</td>
+  </tr>
+  <tr><td colspan="5" class="spacer"></td></tr>
+  <tr>
+    <td class="msg">ENC</td>
+    <td><code>ENC &lt;left_sps&gt; &lt;right_sps&gt;\n</code></td>
+    <td><span class="field">left_sps</span> <span class="type">int</span> steps/sec<br>
+        <span class="field">right_sps</span> <span class="type">int</span> steps/sec</td>
+    <td>10 Hz</td>
+    <td class="note-cell">Wheel encoder speeds. Space-separated integers.</td>
+  </tr>
+  <tr><td colspan="5" class="spacer"></td></tr>
+  <tr>
+    <td class="msg">TOF</td>
+    <td><code>TOF &lt;dist_m&gt;\n</code></td>
+    <td><span class="field">dist_m</span> <span class="type">float</span> metres</td>
+    <td>~10 Hz</td>
+    <td class="note-cell">Time-of-flight distance sensor. 16-byte binary frame from sensor, converted to metres by Teensy.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. JETSON → SENSOR TEENSY                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="sensor-rx">
+<h2>2. JETSON &rarr; SENSOR TEENSY</h2>
+<p class="note">TCP 192.168.1.178:23 &mdash; newline-delimited ASCII commands.</p>
+
+<table>
+  <tr>
+    <th>Command</th>
+    <th>Format</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">IMU_ON</td>
+    <td><code>IMU_ON\n</code></td>
+    <td class="note-cell">Enable YPR streaming from BNO085. Sent automatically on connect.</td>
+  </tr>
+  <tr>
+    <td class="msg">IMU_OFF</td>
+    <td><code>IMU_OFF\n</code></td>
+    <td class="note-cell">Disable YPR streaming.</td>
+  </tr>
+  <tr>
+    <td class="msg">IMU_RATE</td>
+    <td><code>IMU_RATE &lt;hz&gt;\n</code></td>
+    <td class="note-cell"><span class="field">hz</span> <span class="type">int</span> 1&ndash;200. Set YPR output rate. Default: 50. Sent automatically on connect.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. CONTROL TEENSY → JETSON                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="control-tx">
+<h2>3. CONTROL TEENSY &rarr; JETSON</h2>
+<p class="note">TCP 192.168.1.177:23 &mdash; newline-delimited ASCII. Parsed in comms.cpp controlRxLoop callback.</p>
+
+<table>
+  <tr>
+    <th>Message</th>
+    <th>Format</th>
+    <th>Fields</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">ENC</td>
+    <td><code>ENC &lt;left&gt; &lt;right&gt;\n</code></td>
+    <td><span class="field">left</span> <span class="type">int</span> steps/sec<br>
+        <span class="field">right</span> <span class="type">int</span> steps/sec</td>
+    <td class="note-cell">Wheel encoder feedback. Stored in SensorStore encoders.</td>
+  </tr>
+  <tr>
+    <td class="msg">PTU_YPR</td>
+    <td><code>PTU_YPR &lt;yaw&gt; &lt;pitch&gt; &lt;roll&gt;\n</code></td>
+    <td><span class="field">yaw</span> <span class="type">float</span> degrees<br>
+        <span class="field">pitch</span> <span class="type">float</span> degrees<br>
+        <span class="field">roll</span> <span class="type">float</span> degrees</td>
+    <td class="note-cell">PTU-mounted BNO085 IMU orientation. <span class="warn">Currently reverted from deployed binary pending FPS fix.</span></td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. JETSON → CONTROL TEENSY                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="control-rx">
+<h2>4. JETSON &rarr; CONTROL TEENSY</h2>
+<p class="note">TCP 192.168.1.177:23 &mdash; newline-delimited ASCII commands.</p>
+
+<table>
+  <tr>
+    <th>Command</th>
+    <th>Format</th>
+    <th>Fields</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">LS..RS..</td>
+    <td><code>LS&lt;left&gt;RS&lt;right&gt;\n</code></td>
+    <td><span class="field">left</span> <span class="type">int</span> steps/sec<br>
+        <span class="field">right</span> <span class="type">int</span> steps/sec</td>
+    <td class="note-cell">Set wheel motor speeds. Example: <code>LS400RS-400</code> (turn right). Negative = reverse.</td>
+  </tr>
+  <tr><td colspan="4" class="spacer"></td></tr>
+  <tr>
+    <td class="msg">VP..T..</td>
+    <td><code>VP&lt;pan_sps&gt;T&lt;tilt_sps&gt;\n</code></td>
+    <td><span class="field">pan_sps</span> <span class="type">int</span> steps/sec<br>
+        <span class="field">tilt_sps</span> <span class="type">int</span> steps/sec</td>
+    <td class="note-cell">PTU velocity mode. Example: <code>VP200T0</code> (pan right). 0 = stop axis.</td>
+  </tr>
+  <tr>
+    <td class="msg">P..T..</td>
+    <td><code>P&lt;pan&gt;T&lt;tilt&gt;\n</code></td>
+    <td><span class="field">pan</span> <span class="type">int</span> position (steps)<br>
+        <span class="field">tilt</span> <span class="type">int</span> position (steps)</td>
+    <td class="note-cell">PTU absolute position mode. <code>P0T0</code> = centre. Used by "manual_ptu:centre" command.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. JETSON → VPS STATUS JSON                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="jetson-vps">
+<h2>5. JETSON &rarr; VPS &mdash; STATUS JSON</h2>
+<p class="note">TCP port 9999, newline-delimited JSON. Pushed every 1 second (configurable via status_push_interval_ms) and after each command response.</p>
+
+<h3>FULL STATUS JSON SCHEMA</h3>
+<pre>
+{
+  <span class="k">"imu"</span>: {
+    <span class="s">"yaw"</span>: <span class="n">float</span>,        <span class="c">// degrees</span>
+    <span class="s">"pitch"</span>: <span class="n">float</span>,      <span class="c">// degrees</span>
+    <span class="s">"roll"</span>: <span class="n">float</span>,       <span class="c">// degrees</span>
+    <span class="s">"age_ms"</span>: <span class="n">float</span>,     <span class="c">// ms since last reading</span>
+    <span class="s">"stale"</span>: <span class="n">bool</span>        <span class="c">// true if age_ms > telemetry_stale_ms</span>
+  },
+  <span class="k">"gps"</span>: {
+    <span class="s">"lat"</span>: <span class="n">double</span>,       <span class="c">// decimal degrees</span>
+    <span class="s">"lon"</span>: <span class="n">double</span>,       <span class="c">// decimal degrees</span>
+    <span class="s">"alt"</span>: <span class="n">float</span>,        <span class="c">// metres above MSL</span>
+    <span class="s">"speed_knots"</span>: <span class="n">float</span>,
+    <span class="s">"course_deg"</span>: <span class="n">float</span>, <span class="c">// true heading</span>
+    <span class="s">"quality"</span>: <span class="n">int</span>,      <span class="c">// GGA fix quality (0=none, 1=GPS, 2=DGPS)</span>
+    <span class="s">"sats"</span>: <span class="n">int</span>,         <span class="c">// satellites in use</span>
+    <span class="s">"age_ms"</span>: <span class="n">float</span>,
+    <span class="s">"stale"</span>: <span class="n">bool</span>
+  },
+  <span class="k">"encoders"</span>: {
+    <span class="s">"left"</span>: <span class="n">int</span>,         <span class="c">// steps/sec</span>
+    <span class="s">"right"</span>: <span class="n">int</span>,        <span class="c">// steps/sec</span>
+    <span class="s">"age_ms"</span>: <span class="n">float</span>,
+    <span class="s">"stale"</span>: <span class="n">bool</span>
+  },
+  <span class="k">"distance_m"</span>: <span class="n">float</span>,         <span class="c">// TOF distance in metres</span>
+  <span class="k">"distance_age_ms"</span>: <span class="n">float</span>,
+  <span class="k">"lidar_fwd_m"</span>: <span class="n">float</span>,        <span class="c">// closest forward lidar reading (metres)</span>
+  <span class="k">"lidar_fwd_age_ms"</span>: <span class="n">float</span>,
+  <span class="k">"lidar_obstacle"</span>: <span class="n">bool</span>,      <span class="c">// true if obstacle within 0.5m forward</span>
+  <span class="k">"slam_pose"</span>: {
+    <span class="s">"x"</span>: <span class="n">float</span>,           <span class="c">// SLAM map frame X</span>
+    <span class="s">"y"</span>: <span class="n">float</span>,           <span class="c">// SLAM map frame Y</span>
+    <span class="s">"theta"</span>: <span class="n">float</span>,       <span class="c">// heading radians</span>
+    <span class="s">"valid"</span>: <span class="n">bool</span>
+  },
+  <span class="k">"detection_fps"</span>: <span class="n">float</span>,      <span class="c">// YOLOv8 inference FPS</span>
+  <span class="k">"stream_quality"</span>: <span class="n">int</span>,       <span class="c">// JPEG quality 1-100</span>
+  <span class="k">"target_person_id"</span>: <span class="n">int</span>,     <span class="c">// active follow target (-1 = none)</span>
+  <span class="k">"sensors"</span>: {                  <span class="c">// generic sensor slots (auto-populated)</span>
+    <span class="s">"&lt;key&gt;"</span>: {
+      <span class="s">"value"</span>: <span class="n">float</span>,
+      <span class="s">"age_ms"</span>: <span class="n">float</span>,
+      <span class="s">"stale"</span>: <span class="n">bool</span>
+    }
+    <span class="c">// Examples: cpu_temp, gpu_temp, cpu_pct, gpu_pct, ram_pct</span>
+  },
+  <span class="k">"mode"</span>: <span class="n">string</span>,             <span class="c">// "follow" | "manual" | "mission" | "stopped"</span>
+  <span class="k">"mission"</span>: {
+    <span class="s">"running"</span>: <span class="n">bool</span>,
+    <span class="s">"waypoint_idx"</span>: <span class="n">int</span>,    <span class="c">// current waypoint index (0-based)</span>
+    <span class="s">"fault"</span>: <span class="n">string</span>,        <span class="c">// "" | "gps_lost" | "stuck" | "wheel_fail"</span>
+    <span class="s">"id"</span>: <span class="n">string</span>,           <span class="c">// mission ID (if loaded)</span>
+    <span class="s">"name"</span>: <span class="n">string</span>,         <span class="c">// mission display name</span>
+    <span class="s">"waypoint_count"</span>: <span class="n">int</span>,  <span class="c">// total waypoints</span>
+    <span class="s">"target_lat"</span>: <span class="n">double</span>,   <span class="c">// current target waypoint lat</span>
+    <span class="s">"target_lon"</span>: <span class="n">double</span>    <span class="c">// current target waypoint lon</span>
+  }
+}
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. VPS → JETSON WEB COMMANDS                                              -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="vps-jetson">
+<h2>6. VPS &rarr; JETSON &mdash; WEB COMMANDS</h2>
+<p class="note">TCP port 9999, newline-delimited plain text. Handled by comms.cpp handleWebCommand(). Response is status JSON or custom JSON, one line per command.</p>
+
+<table>
+  <tr>
+    <th>Command</th>
+    <th>Format</th>
+    <th>Action</th>
+  </tr>
+  <tr><td colspan="3" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">MODE CONTROL</td></tr>
+  <tr>
+    <td class="msg">stop_follow</td>
+    <td><code>stop_follow\n</code></td>
+    <td>Transition to STOPPED mode. Zeros all actuators.</td>
+  </tr>
+  <tr>
+    <td class="msg">emergency_stop</td>
+    <td><code>emergency_stop\n</code></td>
+    <td>Same as stop_follow. Transition to STOPPED mode.</td>
+  </tr>
+  <tr>
+    <td class="msg">resume_follow</td>
+    <td><code>resume_follow\n</code></td>
+    <td>Transition to FOLLOW mode. Activates person-tracking PID.</td>
+  </tr>
+  <tr><td colspan="3" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">MANUAL CONTROL</td></tr>
+  <tr>
+    <td class="msg">manual_wheel</td>
+    <td><code>manual_wheel:&lt;L&gt;:&lt;R&gt;\n</code></td>
+    <td>Set manual wheel speeds. <span class="field">L</span>, <span class="field">R</span> = <span class="type">int</span> steps/sec. Auto-enters MANUAL mode.</td>
+  </tr>
+  <tr>
+    <td class="msg">manual_ptu (velocity)</td>
+    <td><code>manual_ptu:&lt;P&gt;:&lt;T&gt;\n</code></td>
+    <td>Set PTU velocity. <span class="field">P</span>, <span class="field">T</span> = <span class="type">float</span> steps/sec.</td>
+  </tr>
+  <tr>
+    <td class="msg">manual_ptu (centre)</td>
+    <td><code>manual_ptu:centre\n</code></td>
+    <td>Stop PTU velocity and move to centre position (P0T0).</td>
+  </tr>
+  <tr><td colspan="3" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">MISSION COMMANDS</td></tr>
+  <tr>
+    <td class="msg">mission_save</td>
+    <td><code>mission_save:&lt;json&gt;\n</code></td>
+    <td>Save mission to disk without starting. JSON must include <code>id</code> field.</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_start</td>
+    <td><code>mission_start:&lt;json&gt;\n</code></td>
+    <td>Save and start a mission. Transitions to MISSION mode.</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_abort</td>
+    <td><code>mission_abort\n</code></td>
+    <td>Abort running mission. Transitions to STOPPED mode.</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_load</td>
+    <td><code>mission_load:&lt;id&gt;\n</code></td>
+    <td>Load saved mission by ID from disk and start it.</td>
+  </tr>
+  <tr>
+    <td class="msg">list_missions</td>
+    <td><code>list_missions\n</code></td>
+    <td>Returns JSON array of saved missions (custom response).</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_skip_wp</td>
+    <td><code>mission_skip_wp\n</code></td>
+    <td>Skip current waypoint, advance to next.</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_resume</td>
+    <td><code>mission_resume:&lt;id&gt;\n</code></td>
+    <td>Resume mission from last saved waypoint.</td>
+  </tr>
+  <tr><td colspan="3" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">TARGETING / LEARN</td></tr>
+  <tr>
+    <td class="msg">set_target</td>
+    <td><code>set_target:&lt;person_id&gt;\n</code></td>
+    <td>Set active follow target by gallery person ID. <span class="field">person_id</span> = <span class="type">int</span>.</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_start</td>
+    <td><code>learn_start:&lt;person_id&gt;\n</code></td>
+    <td>Begin collecting appearance crops for AI description.</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_stop</td>
+    <td><code>learn_stop\n</code></td>
+    <td>Stop crop collection, trigger Claude API description.</td>
+  </tr>
+  <tr><td colspan="3" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">CAMERA / STREAM</td></tr>
+  <tr>
+    <td class="msg">stereo_start</td>
+    <td><code>stereo_start\n</code></td>
+    <td>Start stereo depth camera (ZMQ 5557 + 5558).</td>
+  </tr>
+  <tr>
+    <td class="msg">stereo_stop</td>
+    <td><code>stereo_stop\n</code></td>
+    <td>Stop stereo depth camera.</td>
+  </tr>
+  <tr>
+    <td class="msg">stream_quality</td>
+    <td><code>stream_quality:&lt;q&gt;\n</code></td>
+    <td>Set main MJPEG stream JPEG quality. <span class="field">q</span> = <span class="type">int</span> 1&ndash;100.</td>
+  </tr>
+  <tr>
+    <td class="msg">depth_quality</td>
+    <td><code>depth_quality:&lt;q&gt;\n</code></td>
+    <td>Set depth disparity JPEG quality. <span class="field">q</span> = <span class="type">int</span> 1&ndash;100.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. JETSON → VPS EVENT LINES                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="jetson-events">
+<h2>7. JETSON &rarr; VPS &mdash; EVENT LINES</h2>
+<p class="note">TCP port 9999, newline-delimited JSON. Sent via sendWebEvent() &mdash; server.js detects <code>{"type":"event"}</code> and re-broadcasts without overwriting lastStatus cache.</p>
+
+<table>
+  <tr>
+    <th>Event</th>
+    <th>JSON Format</th>
+    <th>Origin</th>
+  </tr>
+  <tr>
+    <td class="msg">mission_completed</td>
+    <td><code>{"type":"event","event":"mission_completed","id":"...","name":"..."}</code></td>
+    <td>mission.cpp &mdash; natural mission completion</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_faulted</td>
+    <td><code>{"type":"event","event":"mission_faulted","id":"...","name":"...","fault":"gps_lost|stuck|wheel_fail"}</code></td>
+    <td>mission.cpp &mdash; mission failure</td>
+  </tr>
+  <tr>
+    <td class="msg">new_target</td>
+    <td><code>{"type":"event","event":"new_target","target_id":&lt;int&gt;}</code></td>
+    <td>object_detection.cpp &mdash; new person added to gallery</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_progress</td>
+    <td><code>{"type":"event","event":"learn_progress","target_id":&lt;int&gt;,"count":&lt;int&gt;,"total":&lt;int&gt;}</code></td>
+    <td>object_detection.cpp &mdash; crop collection progress</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_crops</td>
+    <td><code>{"type":"learn_crops","target_id":&lt;int&gt;,"crops":["&lt;base64_jpg&gt;",...]}</code></td>
+    <td>object_detection.cpp &mdash; collected crops sent to VPS for Claude API</td>
+  </tr>
+  <tr>
+    <td class="msg">scan</td>
+    <td><code>{"type":"scan","obs":&lt;bool&gt;,"fwd":&lt;float&gt;,"pts":[[&lt;angle_deg&gt;,&lt;dist_m&gt;],...]}</code></td>
+    <td>comms.cpp broadcastScan() &mdash; lidar scan data for web radar</td>
+  </tr>
+  <tr>
+    <td class="msg">slam_map</td>
+    <td><code>{"type":"slam_map","png":"&lt;base64&gt;","res":&lt;float&gt;,"ox":&lt;float&gt;,"oy":&lt;float&gt;,"w":&lt;int&gt;,"h":&lt;int&gt;}</code></td>
+    <td>slam_bridge.py via comms.cpp &mdash; occupancy grid PNG, forwarded verbatim</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. WEBSOCKET BROWSER ↔ VPS                                                -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="ws">
+<h2>8. WEBSOCKET BROWSER &harr; VPS</h2>
+<p class="note">WebSocket on port 3000, path <code>/ws?tok=&lt;token&gt;</code>. Token obtained via <code>GET /api/ws-token</code> (valid 30s, one-time use). JSON messages both directions.</p>
+
+<h3>BROWSER &rarr; VPS (COMMANDS)</h3>
+<table>
+  <tr>
+    <th>Format</th>
+    <th>Action</th>
+  </tr>
+  <tr>
+    <td><code>{"cmd":"&lt;command_string&gt;"}</code></td>
+    <td>Forwarded verbatim to Jetson via TCP 9999. All commands from section 6 are valid. Returns <code>{"type":"ack","cmd":"...","ok":true|false}</code>.</td>
+  </tr>
+</table>
+
+<h3>VPS &rarr; BROWSER (EVENTS)</h3>
+<table>
+  <tr>
+    <th>type</th>
+    <th>JSON Fields</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">connection</td>
+    <td><code>{"type":"connection","status":"connected"|"disconnected"}</code></td>
+    <td class="note-cell">Sent on WS open (current state) and on Jetson connect/disconnect.</td>
+  </tr>
+  <tr>
+    <td class="msg">status</td>
+    <td><code>{"type":"status","data":&lt;status_json | null&gt;}</code></td>
+    <td class="note-cell">Full telemetry from Jetson (section 5). Sent on connect (cached) and every push. <code>data: null</code> sent on Jetson disconnect.</td>
+  </tr>
+  <tr>
+    <td class="msg">ack</td>
+    <td><code>{"type":"ack","cmd":"...","ok":true|false}</code></td>
+    <td class="note-cell">Sent to the requesting client after each command.</td>
+  </tr>
+  <tr>
+    <td class="msg">mission_status</td>
+    <td><code>{"type":"mission_status","event":"...","missionId":"...","name":"...","fault":"..."}</code></td>
+    <td class="note-cell">Events: <code>executing</code>, <code>completed</code>, <code>aborted</code>, <code>mission_faulted</code>, <code>abort_pending</code>, <code>pushed</code>.</td>
+  </tr>
+  <tr>
+    <td class="msg">new_target</td>
+    <td><code>{"type":"new_target","target_id":&lt;int&gt;}</code></td>
+    <td class="note-cell">Triggers gallery refresh in browser.</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_progress</td>
+    <td><code>{"type":"learn_progress","target_id":&lt;int&gt;,"count":&lt;int&gt;,"total":&lt;int&gt;}</code></td>
+    <td class="note-cell">Crop collection progress during learn mode.</td>
+  </tr>
+  <tr>
+    <td class="msg">learn_status</td>
+    <td><code>{"type":"learn_status","target_id":&lt;int&gt;,"status":"analysing"|"error","count":&lt;int&gt;,"message":"..."}</code></td>
+    <td class="note-cell">Claude API processing status. Generated by server.js.</td>
+  </tr>
+  <tr>
+    <td class="msg">target_description</td>
+    <td><code>{"type":"target_description","target_id":&lt;int&gt;,"description":"..."}</code></td>
+    <td class="note-cell">AI-generated appearance description. Sent on connect for all known targets, and on new description.</td>
+  </tr>
+  <tr>
+    <td class="msg">scan</td>
+    <td><code>{"type":"scan","obs":&lt;bool&gt;,"fwd":&lt;float&gt;,"pts":[[&lt;deg&gt;,&lt;m&gt;],...]}</code></td>
+    <td class="note-cell">Lidar scan for radar display. Forwarded from Jetson event.</td>
+  </tr>
+  <tr>
+    <td class="msg">slam_map</td>
+    <td><code>{"type":"slam_map","png":"...","res":...,"ox":...,"oy":...,"w":...,"h":...}</code></td>
+    <td class="note-cell">Occupancy grid. Cached &mdash; sent on connect.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. SLAM BRIDGE PROTOCOL                                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="slam">
+<h2>9. SLAM BRIDGE PROTOCOL</h2>
+<p class="note">TCP port 9997, bidirectional newline-delimited JSON between C++ app and slam_bridge.py. Auto-reconnect with 2s retry.</p>
+
+<h3>C++ APP &rarr; SLAM BRIDGE</h3>
+<table>
+  <tr>
+    <th>type</th>
+    <th>JSON Format</th>
+    <th>Published As</th>
+    <th>Rate</th>
+  </tr>
+  <tr>
+    <td class="msg">imu_data</td>
+    <td><code>{"type":"imu_data","yaw":&lt;f&gt;,"pitch":&lt;f&gt;,"roll":&lt;f&gt;}</code></td>
+    <td>ROS2 <code>/imu/data</code> (sensor_msgs/Imu)</td>
+    <td>50 Hz</td>
+  </tr>
+  <tr>
+    <td class="msg">gps_data</td>
+    <td><code>{"type":"gps_data","lat":&lt;f&gt;,"lon":&lt;f&gt;,"alt":&lt;f&gt;,"quality":&lt;i&gt;,"sats":&lt;i&gt;}</code></td>
+    <td>ROS2 <code>/gps/fix</code> (sensor_msgs/NavSatFix)</td>
+    <td>1 Hz</td>
+  </tr>
+  <tr>
+    <td class="msg">gps_rmc</td>
+    <td><code>{"type":"gps_rmc","speed_knots":&lt;f&gt;,"course_deg":&lt;f&gt;}</code></td>
+    <td>Internal heading calibration</td>
+    <td>1 Hz</td>
+  </tr>
+  <tr>
+    <td class="msg">odom_data</td>
+    <td><code>{"type":"odom_data","left":&lt;i&gt;,"right":&lt;i&gt;,"age_ms":&lt;f&gt;}</code></td>
+    <td>ROS2 <code>/odom</code> (nav_msgs/Odometry)</td>
+    <td>10 Hz</td>
+  </tr>
+  <tr>
+    <td class="msg">plan_path</td>
+    <td><code>{"type":"plan_path","from_lat":&lt;f&gt;,"from_lon":&lt;f&gt;,"to_lat":&lt;f&gt;,"to_lon":&lt;f&gt;}</code></td>
+    <td>Nav2 ComputePathToPose action</td>
+    <td>On demand</td>
+  </tr>
+</table>
+
+<h3>SLAM BRIDGE &rarr; C++ APP</h3>
+<table>
+  <tr>
+    <th>type</th>
+    <th>JSON Format</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="msg">scan_full</td>
+    <td><code>{"type":"scan_full","obs":&lt;bool&gt;,"fwd":&lt;float&gt;,"pts":[[&lt;deg&gt;,&lt;m&gt;],...]}</code></td>
+    <td class="note-cell"><span class="field">obs</span> = obstacle within 0.5m fwd. <span class="field">fwd</span> = closest forward distance. <span class="field">pts</span> = polar points [angle_deg, dist_m]. Stored in SensorStore, broadcast to web as scan event.</td>
+  </tr>
+  <tr>
+    <td class="msg">slam_pose</td>
+    <td><code>{"type":"slam_pose","x":&lt;float&gt;,"y":&lt;float&gt;,"theta":&lt;float&gt;}</code></td>
+    <td class="note-cell">SLAM Toolbox estimated pose in map frame. theta in radians.</td>
+  </tr>
+  <tr>
+    <td class="msg">slam_map</td>
+    <td><code>{"type":"slam_map","png":"&lt;base64&gt;","res":&lt;float&gt;,"ox":&lt;float&gt;,"oy":&lt;float&gt;,"w":&lt;int&gt;,"h":&lt;int&gt;}</code></td>
+    <td class="note-cell">Occupancy grid as base64 PNG. <span class="field">res</span> = m/pixel, <span class="field">ox/oy</span> = origin, <span class="field">w/h</span> = dimensions. Forwarded to web verbatim.</td>
+  </tr>
+  <tr>
+    <td class="msg">planned_path (success)</td>
+    <td><code>{"type":"planned_path","ok":true,"waypoints":[[&lt;lat&gt;,&lt;lon&gt;],...]}</code></td>
+    <td class="note-cell">Nav2-planned path as GPS sub-waypoints (~1m spacing). Routed to Nav2Planner.</td>
+  </tr>
+  <tr>
+    <td class="msg">planned_path (failure)</td>
+    <td><code>{"type":"planned_path","ok":false,"error":"..."}</code></td>
+    <td class="note-cell">Errors: "Nav2 not available", "No GPS reference yet", "Nav2 planner server not ready", "GPS&rarr;map conversion failed", "No valid path found".</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  <div class="info-title">ODOMETRY STATE MACHINE</div>
+  <p>slam_bridge.py tracks encoder freshness:
+    <span class="msg">ODOM_INACTIVE</span> &rarr; <span class="msg">ODOM_ACTIVE</span> after 5 consecutive fresh encoder reads.
+    <span class="msg">ODOM_ACTIVE</span> &rarr; <span class="msg">ODOM_INACTIVE</span> after 3 consecutive stale reads.
+    On each transition: saves SLAM map, kills SLAM Toolbox, restarts with matching params YAML (with/without odom).</p>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. ZMQ PORTS                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="zmq">
+<h2>10. ZMQ PUB/SUB PORTS</h2>
+<p class="note">All ZMQ sockets use PUB/SUB pattern on localhost (127.0.0.1). Published by C++ app, consumed by Python bridges.</p>
+
+<table>
+  <tr>
+    <th>Port</th>
+    <th>Publisher</th>
+    <th>Subscriber</th>
+    <th>Content</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="port">5555</td>
+    <td>object_detection.cpp</td>
+    <td>mjpeg_bridge.py</td>
+    <td>Detection-annotated JPEG frames</td>
+    <td class="note-cell">Main camera stream. YOLOv8 bounding boxes + tracking overlaid. CONFLATE=1 (latest only).</td>
+  </tr>
+  <tr>
+    <td class="port">5557</td>
+    <td>stereo_depth.cpp</td>
+    <td>(Future: stereo_ros2_bridge / RTAB-Map)</td>
+    <td>Stereo rectified frame pairs</td>
+    <td class="note-cell">Left+right rectified images for 3D SLAM. Not yet consumed.</td>
+  </tr>
+  <tr>
+    <td class="port">5558</td>
+    <td>stereo_depth.cpp</td>
+    <td>mjpeg_bridge.py</td>
+    <td>Colourised disparity JPEG</td>
+    <td class="note-cell">Depth map visualization. Fed to mjpeg_bridge /depth_stream endpoint.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. MJPEG BRIDGE HTTP ENDPOINTS                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="mjpeg">
+<h2>11. MJPEG BRIDGE &mdash; HTTP ENDPOINTS</h2>
+<p class="note">Python HTTP server on Jetson port 8080. Serves MJPEG streams from ZMQ and target gallery from disk.</p>
+
+<table>
+  <tr>
+    <th>Method</th>
+    <th>Path</th>
+    <th>Response</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/stream</td>
+    <td><code>multipart/x-mixed-replace</code> MJPEG</td>
+    <td class="note-cell">Main detection camera stream. 25 fps target. Boundary: <code>--tankframe</code>. From ZMQ 5555.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/depth_stream</td>
+    <td><code>multipart/x-mixed-replace</code> MJPEG</td>
+    <td class="note-cell">Stereo depth disparity stream. From ZMQ 5558.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/depth_snapshot</td>
+    <td><code>image/jpeg</code></td>
+    <td class="note-cell">Single depth frame JPEG. 503 if no frame available.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/targets</td>
+    <td><code>application/json</code></td>
+    <td class="note-cell">JSON array: <code>[{"id":int,"name":"...","thumb_url":"/targets/&lt;id&gt;/thumb","embed_count":int},...]</code></td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/targets/&lt;id&gt;/thumb</td>
+    <td><code>image/jpeg</code></td>
+    <td class="note-cell">Person thumbnail from gallery. 404 if not found.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/targets/&lt;id&gt;/name</td>
+    <td><code>application/json</code></td>
+    <td class="note-cell">Rename person. Body: <code>{"name":"..."}</code>. Writes to <code>/home/james/tank_targets/&lt;id&gt;/name.txt</code>.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 12. VPS HTTP API                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="vps-http">
+<h2>12. VPS HTTP API ENDPOINTS</h2>
+<p class="note">Node.js server on VPS port 3000. Session-authenticated (7-day cookie). Proxies MJPEG + gallery from Jetson.</p>
+
+<table>
+  <tr>
+    <th>Method</th>
+    <th>Path</th>
+    <th>Auth</th>
+    <th>Response / Action</th>
+  </tr>
+  <tr><td colspan="4" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">AUTHENTICATION</td></tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/login</td>
+    <td>No</td>
+    <td>Login page HTML.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/login</td>
+    <td>No</td>
+    <td>Body: <code>password=...</code>. Sets session cookie on success. Redirects to / or /login?err=1.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/logout</td>
+    <td>Yes</td>
+    <td>Destroys session, redirects to /login.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/ws-token</td>
+    <td>Yes</td>
+    <td><code>{"token":"..."}</code> &mdash; one-time WS auth token, valid 30 seconds.</td>
+  </tr>
+  <tr><td colspan="4" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">VIDEO STREAMS (proxied from Jetson :8080)</td></tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/stream</td>
+    <td>Yes</td>
+    <td>MJPEG relay. Fan-out: single upstream to all viewers. 503 if offline.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/snapshot</td>
+    <td>Yes</td>
+    <td>Single JPEG (for Safari/iOS). 503 if no frame.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/depth_stream</td>
+    <td>Yes</td>
+    <td>Depth MJPEG relay. 503 if offline.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/depth_snapshot</td>
+    <td>Yes</td>
+    <td>Single depth JPEG. 503 if no frame.</td>
+  </tr>
+  <tr><td colspan="4" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">TARGET GALLERY (proxied from Jetson :8080)</td></tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/targets</td>
+    <td>Yes</td>
+    <td>JSON array of known persons.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/targets/:id/thumb</td>
+    <td>Yes</td>
+    <td>Person thumbnail JPEG.</td>
+  </tr>
+  <tr>
+    <td class="dir">PUT</td>
+    <td class="field">/api/targets/:id/name</td>
+    <td>Yes</td>
+    <td>Rename person. Body: <code>{"name":"..."}</code>.</td>
+  </tr>
+  <tr><td colspan="4" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">MISSION API</td></tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/missions</td>
+    <td>Yes</td>
+    <td>JSON list: <code>[{"id","name","type","created","updated","waypointCount"},...]</code></td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/missions/state</td>
+    <td>Yes</td>
+    <td>Current mission state from Jetson: <code>{"mission_id","waypoint_idx"}</code> or <code>{}</code>.</td>
+  </tr>
+  <tr>
+    <td class="dir">GET</td>
+    <td class="field">/api/missions/:id</td>
+    <td>Yes</td>
+    <td>Full mission JSON (waypoints, metadata).</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/api/missions</td>
+    <td>Yes</td>
+    <td>Create/save mission. Body: mission JSON. Returns <code>{"ok":true,"id":"..."}</code>.</td>
+  </tr>
+  <tr>
+    <td class="dir">PUT</td>
+    <td class="field">/api/missions/:id</td>
+    <td>Yes</td>
+    <td>Update mission. Body: mission JSON.</td>
+  </tr>
+  <tr>
+    <td class="dir">DELETE</td>
+    <td class="field">/api/missions/:id</td>
+    <td>Yes</td>
+    <td>Delete mission from VPS.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/api/missions/:id/push</td>
+    <td>Yes</td>
+    <td>Push mission to Jetson (save only, no execute). Sends <code>mission_save:</code> to TCP 9999. Optional body: <code>{"waypoints":[...]}</code> for route-expanded points.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/api/missions/:id/execute</td>
+    <td>Yes</td>
+    <td>Execute mission on Jetson. Sends <code>mission_start:</code> to TCP 9999. Optional body: <code>{"waypoints":[...]}</code>.</td>
+  </tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/api/missions/abort</td>
+    <td>Yes</td>
+    <td>Abort mission. Sends <code>mission_abort</code> to TCP 9999. Queues if offline. Returns <code>{"ok":bool,"queued":bool}</code>.</td>
+  </tr>
+  <tr><td colspan="4" style="background:#111827;color:#ffab00;font-size:10px;letter-spacing:2px;padding:6px 12px">ROUTING</td></tr>
+  <tr>
+    <td class="dir">POST</td>
+    <td class="field">/api/route</td>
+    <td>Yes</td>
+    <td>OSRM road routing. Body: <code>{"points":[{"lat","lng"},...],"profile":"foot"|"car"}</code>. Returns <code>{"points":[...],"distance","duration"}</code>.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- NETWORK DIAGRAM                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>PROTOCOL FLOW DIAGRAM</h2>
+<p class="note">Data flow between all system nodes with ports and protocols.</p>
+
+<div class="svg-wrap"><div class="svg-hint">PINCH · DRAG · DBL-TAP RESET</div>
+<svg width="950" height="480" viewBox="0 0 950 480">
+  <style>
+    .n-label { font-family: 'Courier New', monospace; font-size: 12px; fill: #00b0ff; font-weight: bold; }
+    .n-sub   { font-family: 'Courier New', monospace; font-size: 9px; fill: #64748b; }
+    .n-box   { fill: #0d1220; stroke: #1f2937; stroke-width: 1.5; rx: 6; }
+    .n-wire  { stroke: #00b0ff; stroke-width: 1.5; fill: none; }
+    .n-wire2 { stroke: #00e676; stroke-width: 1.5; fill: none; }
+    .n-wire3 { stroke: #ffab00; stroke-width: 1.5; fill: none; stroke-dasharray: 5,3; }
+    .n-proto { font-family: 'Courier New', monospace; font-size: 9px; fill: #ff80ab; }
+    .n-port  { font-family: 'Courier New', monospace; font-size: 9px; fill: #ff6d00; font-weight: bold; }
+  </style>
+
+  <!-- Jetson (centre) -->
+  <rect class="n-box" x="310" y="15" width="280" height="100" style="stroke:#00e676"/>
+  <text class="n-label" x="450" y="40" text-anchor="middle" fill="#00e676">JETSON ORIN SUPER</text>
+  <text class="n-sub" x="450" y="56" text-anchor="middle">192.168.1.167</text>
+  <text class="n-sub" x="450" y="70" text-anchor="middle">C++ app (comms.cpp + object_detection.cpp)</text>
+  <text class="n-sub" x="450" y="84" text-anchor="middle">slam_bridge.py | mjpeg_bridge.py</text>
+  <text class="n-sub" x="450" y="98" text-anchor="middle">ZMQ 5555/5557/5558 | SLAM :9997</text>
+
+  <!-- Sensor Teensy -->
+  <rect class="n-box" x="20" y="180" width="200" height="70"/>
+  <text class="n-label" x="120" y="205" text-anchor="middle">SENSOR TEENSY</text>
+  <text class="n-sub" x="120" y="220" text-anchor="middle">192.168.1.178 : 23</text>
+  <text class="n-sub" x="120" y="234" text-anchor="middle">YPR | NMEA | ENC | TOF</text>
+  <line class="n-wire" x1="170" y1="180" x2="370" y2="115"/>
+  <text class="n-port" x="245" y="140" text-anchor="middle">TCP :23</text>
+  <text class="n-sub" x="245" y="152" text-anchor="middle" fill="#00e676">ASCII newline-delimited</text>
+
+  <!-- Control Teensy -->
+  <rect class="n-box" x="250" y="180" width="200" height="70"/>
+  <text class="n-label" x="350" y="205" text-anchor="middle">CONTROL TEENSY</text>
+  <text class="n-sub" x="350" y="220" text-anchor="middle">192.168.1.177 : 23</text>
+  <text class="n-sub" x="350" y="234" text-anchor="middle">LS/RS | VP/T | P/T | ENC</text>
+  <line class="n-wire" x1="370" y1="180" x2="420" y2="115"/>
+  <text class="n-port" x="410" y="155" text-anchor="middle">TCP :23</text>
+
+  <!-- SLAM bridge (internal) -->
+  <rect class="n-box" x="490" y="180" width="180" height="55" style="stroke:#b47ffe"/>
+  <text class="n-label" x="580" y="202" text-anchor="middle" fill="#b47ffe">slam_bridge.py</text>
+  <text class="n-sub" x="580" y="218" text-anchor="middle">ROS2 | SLAM | Nav2 | TF</text>
+  <line x1="520" y1="180" x2="480" y2="115" style="stroke:#b47ffe;stroke-width:1.5"/>
+  <text class="n-port" x="515" y="152" text-anchor="middle">TCP :9997</text>
+  <text class="n-sub" x="515" y="164" text-anchor="middle" fill="#b47ffe">JSON newline-delimited</text>
+
+  <!-- mjpeg bridge (internal) -->
+  <rect class="n-box" x="690" y="180" width="180" height="55" style="stroke:#ff80ab"/>
+  <text class="n-label" x="780" y="202" text-anchor="middle" fill="#ff80ab">mjpeg_bridge.py</text>
+  <text class="n-sub" x="780" y="218" text-anchor="middle">HTTP :8080 | ZMQ SUB</text>
+  <line x1="720" y1="180" x2="540" y2="115" style="stroke:#ff80ab;stroke-width:1.5;stroke-dasharray:3,3"/>
+  <text class="n-port" x="650" y="148" text-anchor="middle">ZMQ 5555/5558</text>
+
+  <!-- VPS -->
+  <rect class="n-box" x="640" y="310" width="240" height="80"/>
+  <text class="n-label" x="760" y="335" text-anchor="middle">VPS (server.js)</text>
+  <text class="n-sub" x="760" y="350" text-anchor="middle">87.106.188.134 : 3000</text>
+  <text class="n-sub" x="760" y="364" text-anchor="middle">WS relay | HTTP API | MJPEG proxy</text>
+  <text class="n-sub" x="760" y="378" text-anchor="middle">Claude API (learn descriptions)</text>
+
+  <!-- VPS ← Jetson (TCP 9999) -->
+  <line class="n-wire2" x1="530" y1="115" x2="700" y2="310"/>
+  <text class="n-port" x="635" y="200" text-anchor="middle">TCP :9999</text>
+  <text class="n-sub" x="635" y="212" text-anchor="middle" fill="#00e676">JSON status + commands</text>
+
+  <!-- VPS ← mjpeg_bridge (HTTP 8080) -->
+  <line class="n-wire3" x1="780" y1="235" x2="770" y2="310"/>
+  <text class="n-port" x="790" y="275" text-anchor="middle">HTTP :8080</text>
+  <text class="n-sub" x="790" y="287" text-anchor="middle" fill="#ffab00">MJPEG relay</text>
+
+  <!-- Browser -->
+  <rect class="n-box" x="350" y="390" width="200" height="60"/>
+  <text class="n-label" x="450" y="415" text-anchor="middle">BROWSER</text>
+  <text class="n-sub" x="450" y="430" text-anchor="middle">WebSocket + MJPEG + REST</text>
+  <line class="n-wire2" x1="550" y1="410" x2="640" y2="360"/>
+  <text class="n-port" x="610" y="400" text-anchor="middle">WS :3000</text>
+
+  <!-- YDLIDAR -->
+  <rect class="n-box" x="20" y="310" width="160" height="50"/>
+  <text class="n-label" x="100" y="332" text-anchor="middle">YDLIDAR X3</text>
+  <text class="n-sub" x="100" y="347" text-anchor="middle">USB &rarr; ROS2 /scan</text>
+  <line style="stroke:#b47ffe;stroke-width:1.2;stroke-dasharray:4,3" x1="160" y1="310" x2="510" y2="235"/>
+  <text class="n-sub" x="310" y="280" text-anchor="middle" fill="#b47ffe">ROS2 /scan topic</text>
+
+  <!-- FLIR -->
+  <rect class="n-box" x="20" y="390" width="160" height="50"/>
+  <text class="n-label" x="100" y="412" text-anchor="middle">FLIR TAU</text>
+  <text class="n-sub" x="100" y="427" text-anchor="middle">192.168.1.71 RTSP</text>
+  <line class="n-wire3" x1="180" y1="400" x2="310" y2="90"/>
+  <text class="n-sub" x="220" y="300" text-anchor="middle" fill="#ffab00">RTSP :554</text>
+</svg>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<hr>
+<div class="note" style="margin-top:10px">
+  Tank C2 Protocol Reference &mdash; Generated from source code analysis.<br>
+  Files: comms.cpp, comms.h, slam_link.cpp, slam_link.h, slam_bridge.py, server.js, index.html, mjpeg_bridge.py, CLAUDE.md<br>
+  Last updated: 2026-03-28
+</div>
+
+<script>
+// ── Table card layout ──────────────────────────────
+document.querySelectorAll('table').forEach(function(t){
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);t.style.margin='0';w.appendChild(t);
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+
+// ── SVG pinch-zoom + pan ───────────────────────────
+document.querySelectorAll('.svg-wrap').forEach(function(wrap){
+  var svg=wrap.querySelector('svg');
+  var scale=1,tx=0,ty=0;
+  var dragging=false,startX,startY,startTx,startTy;
+  var lastTap=0,lastDist=0;
+
+  function svgW(){return parseFloat(svg.getAttribute('width')||svg.viewBox.baseVal.width);}
+  function svgH(){return parseFloat(svg.getAttribute('height')||svg.viewBox.baseVal.height);}
+
+  function clamp(){
+    var sw=svgW()*scale, sh=svgH()*scale;
+    var mxTx=wrap.clientWidth*0.8, mnTx=-(sw-wrap.clientWidth*0.2);
+    var mxTy=wrap.clientHeight*0.8, mnTy=-(sh-wrap.clientHeight*0.2);
+    tx=Math.min(mxTx,Math.max(tx,mnTx));
+    ty=Math.min(mxTy,Math.max(ty,mnTy));
+  }
+
+  function apply(){svg.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';}
+
+  function reset(){
+    var vw=wrap.clientWidth;
+    scale=vw<svgW()?vw/svgW():1;
+    tx=0;ty=0;apply();
+  }
+
+  // Set container height = svg natural height on desktop, 280px on mobile
+  function initHeight(){
+    if(wrap.clientWidth>=svgW()){wrap.style.height=svgH()+'px';}
+    else{wrap.style.height='280px';}
+  }
+
+  setTimeout(function(){initHeight();reset();},0);
+  window.addEventListener('resize',function(){initHeight();reset();});
+
+  // Mouse wheel zoom
+  wrap.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var r=wrap.getBoundingClientRect();
+    var cx=e.clientX-r.left,cy=e.clientY-r.top;
+    var d=e.deltaY>0?0.85:1.18;
+    var ns=Math.max(0.15,Math.min(6,scale*d));
+    tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+    scale=ns;clamp();apply();
+  },{passive:false});
+
+  // Mouse drag
+  wrap.addEventListener('mousedown',function(e){
+    dragging=true;startX=e.clientX;startY=e.clientY;startTx=tx;startTy=ty;
+    wrap.classList.add('dragging');
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    tx=startTx+e.clientX-startX;ty=startTy+e.clientY-startY;
+    clamp();apply();
+  });
+  document.addEventListener('mouseup',function(){dragging=false;wrap.classList.remove('dragging');});
+  wrap.addEventListener('dblclick',reset);
+
+  // Touch
+  wrap.addEventListener('touchstart',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      startX=e.touches[0].clientX;startY=e.touches[0].clientY;startTx=tx;startTy=ty;
+      var now=Date.now();if(now-lastTap<300)reset();lastTap=now;
+    } else if(e.touches.length===2){
+      lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    }
+  },{passive:false});
+
+  wrap.addEventListener('touchmove',function(e){
+    e.preventDefault();
+    if(e.touches.length===1){
+      tx=startTx+e.touches[0].clientX-startX;ty=startTy+e.touches[0].clientY-startY;
+      clamp();apply();
+    } else if(e.touches.length===2){
+      var dist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+      var r=wrap.getBoundingClientRect();
+      var cx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+      var cy=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+      var ns=Math.max(0.15,Math.min(6,scale*dist/lastDist));
+      tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);
+      scale=ns;lastDist=dist;clamp();apply();
+    }
+  },{passive:false});
+});
+</script>
+</body>
+</html>

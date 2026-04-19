@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Tank C2 - Build &amp; Deploy Quickstart</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 20px; }
+  h1 { color: #00e676; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px; }
+  h2 { color: #00b0ff; letter-spacing: 2px; font-size: 15px; margin-top: 40px; margin-bottom: 4px; }
+  h3 { color: #ffab00; font-size: 12px; margin-top: 20px; letter-spacing: 1px; }
+  .note { color: #64748b; font-size: 11px; margin-bottom: 12px; }
+  .section { margin-bottom: 50px; }
+  p { font-size: 12px; line-height: 1.6; margin: 6px 0; }
+
+  table { border-collapse: collapse; margin: 10px 0; }
+  th { background: #111827; color: #00b0ff; font-size: 11px; letter-spacing: 1px; padding: 6px 12px; border: 1px solid #1f2937; text-align: left; }
+  td { background: #0d1220; font-size: 11px; padding: 5px 12px; border: 1px solid #1f2937; }
+  .pin { color: #00e676; font-weight: bold; }
+  .serial { color: #ffab00; }
+  .device { color: #00b0ff; }
+  .note-cell { color: #94a3b8; font-style: italic; }
+  .path { color: #b47ffe; }
+  .cmd { color: #00e676; }
+  .warn { color: #ff6d00; }
+  .cred { color: #ff80ab; }
+
+  pre {
+    background: #111827; border: 1px solid #1f2937; border-radius: 6px;
+    padding: 10px 14px; font-size: 11px; overflow-x: auto; line-height: 1.5;
+    color: #e2e8f0; margin: 8px 0;
+  }
+  pre .comment { color: #64748b; }
+  pre .highlight { color: #00e676; }
+  pre .flag { color: #ffab00; }
+
+  code {
+    background: #111827; border: 1px solid #1f2937; border-radius: 3px;
+    padding: 1px 5px; font-size: 11px; color: #00e676;
+  }
+
+  .warn-box {
+    background: #1a0a0a; border: 1px solid #ff6d00; border-radius: 4px;
+    padding: 8px 14px; font-size: 11px; color: #ff6d00; margin: 10px 0; display: inline-block;
+  }
+  .info-box {
+    background: #0a1a1a; border: 1px solid #00b0ff; border-radius: 4px;
+    padding: 8px 14px; font-size: 11px; color: #00b0ff; margin: 10px 0; display: inline-block;
+  }
+
+  .toc { margin: 15px 0; }
+  .toc a { color: #00b0ff; text-decoration: none; font-size: 12px; }
+  .toc a:hover { text-decoration: underline; }
+  .toc li { margin: 4px 0; }
+
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.steps li { counter-increment: step; margin: 6px 0; font-size: 12px; }
+  ol.steps li::before { content: counter(step) "."; color: #00e676; font-weight: bold; margin-right: 8px; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+</style>
+</head>
+<body>
+
+<h1>TANK C2 - BUILD &amp; DEPLOY QUICKSTART</h1>
+<div class="note">Generated 2026-03-28 &mdash; covers Teensy firmware, Jetson C++ deployment, VPS Node.js, and unified launcher</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+<ol>
+  <li><a href="#prereqs">Prerequisites</a></li>
+  <li><a href="#teensy">Teensy Firmware</a></li>
+  <li><a href="#jetson">Jetson C++ Deployment</a></li>
+  <li><a href="#vps">VPS Deployment</a></li>
+  <li><a href="#start">Starting the Stack</a></li>
+  <li><a href="#commands">Quick Commands</a></li>
+  <li><a href="#git">Git Workflow</a></li>
+</ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. PREREQUISITES                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="prereqs">
+<h2>1. PREREQUISITES</h2>
+
+<h3>WINDOWS DEV MACHINE</h3>
+<table>
+  <tr><th>Software</th><th>Purpose</th><th>Notes</th></tr>
+  <tr>
+    <td class="device">Python 3.x + paramiko</td>
+    <td>Deploy script (SFTP + SSH)</td>
+    <td class="note-cell"><code>pip install paramiko</code></td>
+  </tr>
+  <tr>
+    <td class="device">Arduino IDE 2.x</td>
+    <td>Teensy firmware compile/upload</td>
+    <td class="note-cell">Includes bundled arduino-cli</td>
+  </tr>
+  <tr>
+    <td class="device">Teensyduino</td>
+    <td>Teensy 4.1 board support</td>
+    <td class="note-cell">FQBN: <code>teensy:avr:teensy41</code></td>
+  </tr>
+  <tr>
+    <td class="device">Git</td>
+    <td>Source control</td>
+    <td class="note-cell">Repo at <span class="path">c:\python\tank-c2\</span></td>
+  </tr>
+</table>
+
+<h3>JETSON ORIN SUPER (192.168.1.167)</h3>
+<table>
+  <tr><th>Software</th><th>Purpose</th><th>Notes</th></tr>
+  <tr>
+    <td class="device">CUDA + TensorRT</td>
+    <td>YOLOv8 inference</td>
+    <td class="note-cell">Pre-installed with JetPack</td>
+  </tr>
+  <tr>
+    <td class="device">OpenCV 4 (CUDA)</td>
+    <td>Vision + stereo depth</td>
+    <td class="note-cell">Built from source with CUDA modules</td>
+  </tr>
+  <tr>
+    <td class="device">ROS2 Humble</td>
+    <td>SLAM, Nav2, EKF</td>
+    <td class="note-cell"><code>/opt/ros/humble/setup.bash</code></td>
+  </tr>
+  <tr>
+    <td class="device">ros-humble-nav2-*</td>
+    <td>Path planning</td>
+    <td class="note-cell">planner, costmap-2d, lifecycle-manager, msgs</td>
+  </tr>
+  <tr>
+    <td class="device">ros-humble-slam-toolbox</td>
+    <td>2D SLAM</td>
+    <td class="note-cell">Managed by slam_bridge.py lifecycle</td>
+  </tr>
+  <tr>
+    <td class="device">ros-humble-robot-localization</td>
+    <td>EKF sensor fusion</td>
+    <td class="note-cell">Only needed when encoders are wired</td>
+  </tr>
+  <tr>
+    <td class="device">ydlidar_ros2_driver</td>
+    <td>YDLIDAR X3 lidar</td>
+    <td class="note-cell">Built from source in <span class="path">~/ros2_ws</span></td>
+  </tr>
+  <tr>
+    <td class="device">cmake, g++, Boost, ZeroMQ, nlohmann-json, Eigen3</td>
+    <td>C++ build dependencies</td>
+    <td class="note-cell">See CMakeLists.txt for full list</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  ROS2 packages install command:<br>
+  <code>sudo apt install ros-humble-nav2-planner ros-humble-nav2-costmap-2d ros-humble-nav2-lifecycle-manager ros-humble-nav2-msgs ros-humble-robot-localization</code>
+</div>
+
+<h3>VPS (87.106.188.134)</h3>
+<table>
+  <tr><th>Software</th><th>Purpose</th><th>Notes</th></tr>
+  <tr>
+    <td class="device">Node.js</td>
+    <td>Web server + WebSocket relay</td>
+    <td class="note-cell">server.js</td>
+  </tr>
+  <tr>
+    <td class="device">pm2</td>
+    <td>Process manager</td>
+    <td class="note-cell">App name: <code>tank-c2</code></td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. TEENSY FIRMWARE                                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="teensy">
+<h2>2. TEENSY FIRMWARE</h2>
+<p class="note">Both Teensys use Teensy 4.1 with NativeEthernet. Arduino-cli is bundled with Arduino IDE 2.x.</p>
+
+<h3>ARDUINO-CLI PATH</h3>
+<pre>"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"</pre>
+
+<h3>SENSOR TEENSY (192.168.1.178)</h3>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td class="device">Sketch</td><td class="path">C:\Users\admin\Documents\Arduino\SENSOR_TEENSY\SENSOR_TEENSY.ino</td></tr>
+  <tr><td class="device">FQBN</td><td><code>teensy:avr:teensy41</code></td></tr>
+  <tr><td class="device">Peripherals</td><td>BNO085 IMU (Serial3), BN880 GPS (Serial6), TOF (Serial7), wheel encoders, Ethernet</td></tr>
+  <tr><td class="device">Static IP</td><td>192.168.1.178, TCP port 23</td></tr>
+</table>
+
+<p>Compile:</p>
+<pre><span class="comment"># Compile only (verify)</span>
+"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile <span class="flag">--fqbn</span> teensy:avr:teensy41 "C:\Users\admin\Documents\Arduino\SENSOR_TEENSY\SENSOR_TEENSY.ino"</pre>
+
+<p>Compile + upload (Teensy connected via USB):</p>
+<pre><span class="comment"># Compile and upload &mdash; press the button on the Teensy if Teensy Loader prompts</span>
+"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile <span class="flag">--fqbn</span> teensy:avr:teensy41 <span class="flag">-u</span> <span class="flag">-p</span> COM<em>X</em> "C:\Users\admin\Documents\Arduino\SENSOR_TEENSY\SENSOR_TEENSY.ino"</pre>
+
+<h3>CONTROL TEENSY (192.168.1.177)</h3>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td class="device">Sketch</td><td class="path">C:\Users\admin\Documents\Arduino\PTU_Wheel_IMU_ETH_NoStutt\PTU_Wheel_IMU_ETH_NoStutt.ino</td></tr>
+  <tr><td class="device">FQBN</td><td><code>teensy:avr:teensy41</code></td></tr>
+  <tr><td class="device">Peripherals</td><td>Wheel steppers, PTU pan/tilt steppers (A4988), BNO085 PTU IMU (Serial5), Ethernet</td></tr>
+  <tr><td class="device">Static IP</td><td>192.168.1.177, TCP port 23</td></tr>
+</table>
+
+<p>Compile:</p>
+<pre>"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile <span class="flag">--fqbn</span> teensy:avr:teensy41 "C:\Users\admin\Documents\Arduino\PTU_Wheel_IMU_ETH_NoStutt\PTU_Wheel_IMU_ETH_NoStutt.ino"</pre>
+
+<p>Compile + upload:</p>
+<pre>"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile <span class="flag">--fqbn</span> teensy:avr:teensy41 <span class="flag">-u</span> <span class="flag">-p</span> COM<em>X</em> "C:\Users\admin\Documents\Arduino\PTU_Wheel_IMU_ETH_NoStutt\PTU_Wheel_IMU_ETH_NoStutt.ino"</pre>
+
+<div class="warn-box">
+  Replace <strong>COM<em>X</em></strong> with the actual COM port of the connected Teensy (check Device Manager &rarr; Ports).<br>
+  NativeEthernet must init <strong>before</strong> UART on Teensy 4.1 (DMA channel conflict).
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. JETSON C++ DEPLOYMENT                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="jetson">
+<h2>3. JETSON C++ DEPLOYMENT</h2>
+<p class="note">Uses paramiko SFTP &mdash; sshpass not available on Windows, scp password auth blocked on Jetson. Cannot use git on Jetson (deploy dir inside upstream repo).</p>
+
+<h3>CREDENTIALS</h3>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td class="device">Host</td><td class="cred">192.168.1.167</td></tr>
+  <tr><td class="device">User</td><td class="cred">james</td></tr>
+  <tr><td class="device">Password</td><td class="cred">!123Wo55a</td></tr>
+</table>
+
+<h3>KEY PATHS</h3>
+<table>
+  <tr><th>Location</th><th>Path</th></tr>
+  <tr><td class="device">Local source</td><td class="path">c:\python\tank-c2\jetson\</td></tr>
+  <tr><td class="device">Remote source</td><td class="path">/home/james/YOLOv8-TensorRT/csrc/jetson/detect/</td></tr>
+  <tr><td class="device">Remote binary</td><td class="path">/home/james/YOLOv8-TensorRT/csrc/jetson/detect/build/yolov8</td></tr>
+  <tr><td class="device">YOLOv8 engine</td><td class="path">/home/james/YOLOv8-TensorRT/yolov8n.engine</td></tr>
+  <tr><td class="device">Deploy script</td><td class="path">c:\python\tank-c2\deploy_phase4.py</td></tr>
+</table>
+
+<h3>DEPLOYED FILES (55 files)</h3>
+<table>
+  <tr><th>Category</th><th>Files</th></tr>
+  <tr>
+    <td class="device">C++ sources</td>
+    <td class="path">main.cpp, comms.cpp, object_detection.cpp, mission.cpp, nav2_planner.cpp,
+        behavior_coordinator.cpp, follow_behavior.cpp, mission_behavior.cpp, slam_link.cpp,
+        teensy_link.cpp, stereo_depth.cpp, sensor_store.cpp, system_monitor.cpp, runtime_config.cpp, logger.cpp</td>
+  </tr>
+  <tr>
+    <td class="device">C++ headers</td>
+    <td class="path">include/comms.h, include/mission.h, include/config.h, include/behavior.h,
+        include/behavior_coordinator.h, include/control_mode.h, include/follow_behavior.h,
+        include/mission_behavior.h, include/slam_link.h, include/nav2_planner.h, include/path_planner.h,
+        include/obstacle_utils.h, include/sensor_store.h, include/helpers.h, include/stereo_depth.h,
+        include/system_monitor.h, include/runtime_config.h</td>
+  </tr>
+  <tr>
+    <td class="device">Python scripts</td>
+    <td class="path">slam_bridge.py, mjpeg_bridge.py</td>
+  </tr>
+  <tr>
+    <td class="device">Config/launch</td>
+    <td class="path">CMakeLists.txt, config.json, nav2_params.yaml, ekf_params.yaml, nav2_planner_launch.py, start_tank.sh</td>
+  </tr>
+</table>
+
+<h3>DEPLOY COMMAND</h3>
+<pre><span class="comment"># From Windows dev machine</span>
+<span class="highlight">python c:\python\tank-c2\deploy_phase4.py</span></pre>
+
+<p>The script performs these steps:</p>
+<ol class="steps">
+  <li>Connects to Jetson via SSH (paramiko)</li>
+  <li>Opens SFTP session</li>
+  <li>Uploads all files to <span class="path">/home/james/YOLOv8-TensorRT/csrc/jetson/detect/</span></li>
+  <li>Makes <code>start_tank.sh</code> executable (<code>chmod +x</code>)</li>
+  <li>Runs <code>cd build && cmake .. && cmake --build .</code> (300s timeout)</li>
+  <li>Prints build output and exit code</li>
+</ol>
+
+<h3>CMAKE BUILD SYSTEM</h3>
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td class="device">Language</td><td>C++17 + CUDA</td></tr>
+  <tr><td class="device">Build type</td><td>Debug (-O0 -g)</td></tr>
+  <tr><td class="device">CUDA architectures</td><td>60, 61, 62, 70, 72, 75, 86</td></tr>
+  <tr><td class="device">Dependencies</td><td>CUDA, OpenCV 4 (CUDA), TensorRT, Boost (filesystem), ZeroMQ, Eigen3, nlohmann-json, pthreads</td></tr>
+  <tr><td class="device">External sources</td><td>BoTSORT-cpp (person tracking)</td></tr>
+  <tr><td class="device">Output binary</td><td><span class="path">build/yolov8</span></td></tr>
+</table>
+
+<div class="warn-box">
+  <strong>Rebuilding recompiles everything changed</strong> &mdash; cmake --build recompiles all modified .cpp files, not just the one you edited. If object_detection.cpp has in-progress changes, they will be compiled too.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. VPS DEPLOYMENT                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="vps">
+<h2>4. VPS DEPLOYMENT</h2>
+<p class="note">Node.js web server + WebSocket relay. Managed by pm2.</p>
+
+<h3>CREDENTIALS</h3>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td class="device">Host</td><td class="cred">87.106.188.134</td></tr>
+  <tr><td class="device">User</td><td class="cred">root</td></tr>
+  <tr><td class="device">Password</td><td class="cred">CP2Xy3TDzxHGVpcV</td></tr>
+  <tr><td class="device">Remote path</td><td class="path">/var/www/tank-c2/</td></tr>
+  <tr><td class="device">pm2 app name</td><td><code>tank-c2</code></td></tr>
+  <tr><td class="device">Website password</td><td class="cred">T4nkC2!2026</td></tr>
+</table>
+
+<h3>DEPLOY PROCESS</h3>
+<p>VPS deployment follows the same paramiko SFTP pattern. Upload changed files, then reload pm2:</p>
+
+<pre><span class="comment"># Python snippet &mdash; deploy server.js (and any other changed files) to VPS</span>
+import paramiko, os
+
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect(<span class="highlight">"87.106.188.134"</span>, username=<span class="highlight">"root"</span>, password=<span class="highlight">"CP2Xy3TDzxHGVpcV"</span>)
+sftp = ssh.open_sftp()
+
+<span class="comment"># Upload files</span>
+sftp.put(r"c:\python\tank-c2\server.js", "/var/www/tank-c2/server.js")
+<span class="comment"># ... upload any other changed files ...</span>
+
+<span class="comment"># Reload pm2</span>
+stdin, stdout, stderr = ssh.exec_command(<span class="highlight">"pm2 reload /var/www/tank-c2/ecosystem.config.js"</span>)
+print(stdout.read().decode())
+
+sftp.close()
+ssh.close()</pre>
+
+<h3>KEY VPS FILES</h3>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td class="path">server.js</td><td>Main Node.js app &mdash; web UI host, WebSocket relay between browser and Jetson</td></tr>
+  <tr><td class="path">ecosystem.config.js</td><td>pm2 config file</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. STARTING THE STACK                                                     -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="start">
+<h2>5. STARTING THE STACK</h2>
+<p class="note">start_tank.sh is the unified launcher. One command starts all 6 subsystems, one Ctrl+C stops everything.</p>
+
+<h3>LAUNCHER COMMANDS</h3>
+<pre><span class="comment"># Full stack (all subsystems)</span>
+<span class="highlight">bash start_tank.sh</span>
+
+<span class="comment"># Skip EKF (use until wheel encoders are physically wired)</span>
+<span class="highlight">bash start_tank.sh <span class="flag">--no-ekf</span></span>
+
+<span class="comment"># Skip Nav2 planner</span>
+<span class="highlight">bash start_tank.sh <span class="flag">--no-nav2</span></span>
+
+<span class="comment"># Skip both</span>
+<span class="highlight">bash start_tank.sh <span class="flag">--no-ekf</span> <span class="flag">--no-nav2</span></span></pre>
+
+<h3>STARTUP SEQUENCE</h3>
+<table>
+  <tr><th>#</th><th>Subsystem</th><th>What It Does</th><th>Skippable</th></tr>
+  <tr>
+    <td class="pin">1</td>
+    <td class="device">ydlidar_ros2_driver</td>
+    <td>YDLIDAR X3 360-degree lidar scan publisher</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td class="pin">2</td>
+    <td class="device">slam_bridge.py</td>
+    <td>ROS2 &harr; TCP bridge (port 9997). Manages SLAM Toolbox lifecycle, publishes /imu/data + /gps/fix, hosts Nav2 action client, dynamic odom&rarr;base_link TF</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td class="pin">3</td>
+    <td class="device">robot_localization EKF + navsat</td>
+    <td>Fuses wheel odometry + IMU. navsat_transform for GPS&harr;odom conversion</td>
+    <td class="warn">--no-ekf</td>
+  </tr>
+  <tr>
+    <td class="pin">4</td>
+    <td class="device">Nav2 planner_server</td>
+    <td>SmacPlanner2D on SLAM costmap for obstacle-aware path planning</td>
+    <td class="warn">--no-nav2</td>
+  </tr>
+  <tr>
+    <td class="pin">5</td>
+    <td class="device">mjpeg_bridge.py</td>
+    <td>MJPEG fan-out relay on port 8080. Subscribes ZMQ 5558 for stereo disparity</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td class="pin">6</td>
+    <td class="device">yolov8 (C++ app)</td>
+    <td>YOLOv8 detection, person tracking, stereo depth, all comms (Teensys, VPS, SLAM bridge)</td>
+    <td>No</td>
+  </tr>
+</table>
+
+<h3>DIRECT C++ APP ONLY</h3>
+<p>If the ROS2 stack is already running separately:</p>
+<pre><span class="highlight">./yolov8 /home/james/YOLOv8-TensorRT/yolov8n.engine <span class="flag">--auto-continue</span> <span class="flag">--headless</span></span>
+
+<span class="comment"># With explicit Teensy IPs (these are the compiled defaults)</span>
+<span class="highlight">./yolov8 /home/james/YOLOv8-TensorRT/yolov8n.engine <span class="flag">--auto-continue</span> <span class="flag">--headless</span> \
+    <span class="flag">--ptu-ip</span> 192.168.1.177:23 <span class="flag">--sensor-ip</span> 192.168.1.178:23</span></pre>
+
+<div class="warn-box">
+  <strong>Do NOT run EKF without wheel encoders</strong> &mdash; EKF has no velocity/position source without them. Always use <code>--no-ekf</code> until encoders are physically wired.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. QUICK COMMANDS                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="commands">
+<h2>6. QUICK COMMANDS</h2>
+
+<h3>SSH ACCESS</h3>
+<pre><span class="comment"># Jetson (from Windows &mdash; use PuTTY, Windows Terminal ssh, or paramiko)</span>
+ssh james@192.168.1.167          <span class="comment"># password: !123Wo55a</span>
+
+<span class="comment"># VPS</span>
+ssh root@87.106.188.134          <span class="comment"># password: CP2Xy3TDzxHGVpcV</span></pre>
+
+<h3>JETSON &mdash; COMMON OPERATIONS</h3>
+<pre><span class="comment"># Check if the app is running</span>
+ps aux | grep yolov8
+
+<span class="comment"># Kill all tank processes</span>
+pkill -f yolov8; pkill -f slam_bridge; pkill -f mjpeg_bridge; pkill -f ydlidar
+
+<span class="comment"># View live app output (if started via start_tank.sh in tmux/screen)</span>
+tail -f /tmp/robot_run.csv
+
+<span class="comment"># Manual rebuild on Jetson</span>
+cd /home/james/YOLOv8-TensorRT/csrc/jetson/detect/build
+cmake .. && cmake --build .
+
+<span class="comment"># Check ROS2 topics</span>
+source /opt/ros/humble/setup.bash
+ros2 topic list
+ros2 topic echo /scan --once
+
+<span class="comment"># Start the stack</span>
+cd /home/james/YOLOv8-TensorRT/csrc/jetson/detect
+bash start_tank.sh --no-ekf</pre>
+
+<h3>VPS &mdash; COMMON OPERATIONS</h3>
+<pre><span class="comment"># Check pm2 status</span>
+pm2 status
+
+<span class="comment"># View live logs</span>
+pm2 logs tank-c2
+
+<span class="comment"># Restart</span>
+pm2 restart tank-c2
+
+<span class="comment"># Reload (zero-downtime)</span>
+pm2 reload /var/www/tank-c2/ecosystem.config.js</pre>
+
+<h3>DEPLOY FROM WINDOWS (one-liners)</h3>
+<pre><span class="comment"># Deploy C++ to Jetson and build</span>
+<span class="highlight">python c:\python\tank-c2\deploy_phase4.py</span>
+
+<span class="comment"># Quick test: deploy a single file manually (Python)</span>
+python -c "
+import paramiko
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect('192.168.1.167', username='james', password='!123Wo55a')
+sftp = ssh.open_sftp()
+sftp.put(r'c:\python\tank-c2\jetson\comms.cpp', '/home/james/YOLOv8-TensorRT/csrc/jetson/detect/comms.cpp')
+sftp.close(); ssh.close()
+print('Done')
+"</pre>
+
+<h3>NETWORK ADDRESSES</h3>
+<table>
+  <tr><th>Device</th><th>IP</th><th>Port(s)</th></tr>
+  <tr><td class="device">Jetson Orin Super</td><td>192.168.1.167</td><td>8080 (MJPEG), 5557 (ZMQ stereo), 5558 (ZMQ disparity), 9997 (SLAM bridge), 9999 (VPS IPC)</td></tr>
+  <tr><td class="device">Control Teensy</td><td>192.168.1.177</td><td>23 (TCP)</td></tr>
+  <tr><td class="device">Sensor Teensy</td><td>192.168.1.178</td><td>23 (TCP)</td></tr>
+  <tr><td class="device">FLIR Tau Thermal</td><td>192.168.0.71</td><td>RTSP: rtsp://192.168.0.71/z3-2.sdp</td></tr>
+  <tr><td class="device">VPS</td><td>87.106.188.134</td><td>443/80 (web), 9999 (IPC from Jetson)</td></tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. GIT WORKFLOW                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="git">
+<h2>7. GIT WORKFLOW</h2>
+<p class="note">Git is used on the Windows dev machine only. The Jetson deploy directory is inside an upstream repo and cannot use git.</p>
+
+<h3>BRANCH STRUCTURE</h3>
+<table>
+  <tr><th>Branch</th><th>Purpose</th><th>Status</th></tr>
+  <tr>
+    <td class="cmd">main</td>
+    <td>Stable releases</td>
+    <td class="note-cell">Base branch for PRs</td>
+  </tr>
+  <tr>
+    <td class="cmd">feature/lidar</td>
+    <td>Active development &mdash; lidar, SLAM, Nav2, behavior system</td>
+    <td class="pin">CURRENT</td>
+  </tr>
+</table>
+
+<h3>COMMIT CONVENTIONS</h3>
+<p>Recent commit messages follow a pattern of short imperative descriptions:</p>
+<pre>Add system monitor, unified video panel, depth quality control, IP fixes
+Fix code review bugs: signal handler, heading EMA, NMEA checksum, fd race
+Add behavior architecture, Nav2 path planning, EKF config, unified launcher
+Smart camera fallback + stereo lag fix
+Fix detection FPS: camera resilience + 28fps recovery</pre>
+
+<p>Pattern: <code>[Add|Fix|Split|Drop|Rate-limit] &lt;concise description&gt;</code></p>
+
+<h3>TYPICAL WORKFLOW</h3>
+<pre><span class="comment"># 1. Edit source files locally in c:\python\tank-c2\jetson\</span>
+
+<span class="comment"># 2. Deploy to Jetson and build</span>
+python deploy_phase4.py
+
+<span class="comment"># 3. SSH to Jetson, test</span>
+bash start_tank.sh --no-ekf
+
+<span class="comment"># 4. Iterate until working, then commit</span>
+git add jetson/comms.cpp jetson/include/comms.h
+git commit -m "Add heartbeat to control Teensy link"
+
+<span class="comment"># 5. Push feature branch</span>
+git push origin feature/lidar
+
+<span class="comment"># 6. PR into main when stable</span>
+gh pr create --base main --head feature/lidar --title "Add lidar + SLAM stack"</pre>
+
+<div class="info-box">
+  The deploy script (<code>deploy_phase4.py</code>) deploys from the local <span class="path">jetson/</span> directory, not from git.<br>
+  Always commit <strong>after</strong> testing on the Jetson, not before.
+</div>
+</div>
+
+<script>
+document.querySelectorAll('table').forEach(function(t){
+  // Wrap in horizontal-scroll container
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);
+  t.style.margin='0';
+  w.appendChild(t);
+  // Card layout: find header row
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    // Mark spacer rows (rows where first td has height style or colspan=all)
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    // Add data-label to each td
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>UMBRIS - Troubleshooting Guide</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { background: #0a0e1a; color: #e2e8f0; font-family: 'Courier New', monospace; margin: 20px; max-width: 1200px; }
+  h1 { color: #00e676; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px; }
+  h2 { color: #00b0ff; letter-spacing: 2px; font-size: 15px; margin-top: 50px; margin-bottom: 4px; }
+  h3 { color: #ffab00; font-size: 13px; margin-top: 20px; margin-bottom: 8px; letter-spacing: 1px; }
+  .note { color: #64748b; font-size: 11px; margin-bottom: 12px; }
+  .section { margin-bottom: 50px; }
+  .toc { margin: 20px 0 40px 0; }
+  .toc a { color: #00b0ff; text-decoration: none; font-size: 12px; display: block; padding: 3px 0; }
+  .toc a:hover { color: #00e676; }
+
+  /* Issue table styling */
+  table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+  th { background: #111827; color: #00b0ff; font-size: 11px; letter-spacing: 1px; padding: 6px 12px; border: 1px solid #1f2937; text-align: left; }
+  td { background: #0d1220; font-size: 11px; padding: 5px 12px; border: 1px solid #1f2937; vertical-align: top; line-height: 1.6; }
+
+  .symptom { color: #ff6d00; font-weight: bold; }
+  .cause { color: #94a3b8; }
+  .fix { color: #00e676; }
+  .warn { color: #ff1744; }
+  .file { color: #b47ffe; }
+  .cmd { color: #ffab00; }
+  .val { color: #00b0ff; }
+
+  /* Code blocks */
+  code { background: #111827; color: #ffab00; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+  pre { background: #111827; border: 1px solid #1f2937; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #e2e8f0; overflow-x: auto; margin: 8px 0; }
+
+  /* Warning / info boxes */
+  .warn-box { background: #1a0a0a; border: 1px solid #ff6d00; border-radius: 4px; padding: 8px 14px; font-size: 11px; color: #ff6d00; margin: 10px 0; display: block; }
+  .info-box { background: #0a1a1a; border: 1px solid #00b0ff; border-radius: 4px; padding: 8px 14px; font-size: 11px; color: #00b0ff; margin: 10px 0; display: block; }
+
+  /* Legend */
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 15px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* Separator rows */
+  .sep td { height: 4px; padding: 0; background: #111827; border: none; }
+
+
+/* ── Responsive ──────────────────────────────────── */
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  body{margin:12px}
+  h1{font-size:15px;letter-spacing:1px}
+  h2{font-size:12px}
+  pre{font-size:10px}
+}
+/* Card layout for tables on narrow screens */
+@media(max-width:600px){
+  table.card-tbl{border:none;width:100%}
+  table.card-tbl tr{display:block;margin-bottom:8px;border:1px solid #1f2937;border-radius:4px;overflow:hidden}
+  table.card-tbl tr.hdr-row{display:none}
+  table.card-tbl tr.spacer-row{display:none}
+  table.card-tbl td{display:flex;gap:8px;border:none;border-bottom:1px solid #0d1117;padding:6px 10px;font-size:11px;align-items:baseline}
+  table.card-tbl td:last-child{border-bottom:none}
+  table.card-tbl td::before{content:attr(data-label);color:#00b0ff;font-size:10px;letter-spacing:1px;min-width:72px;flex-shrink:0;padding-top:1px}
+  table.card-tbl td[colspan]{display:none}
+}
+</style>
+</head>
+<body>
+
+<h1>UMBRIS - TROUBLESHOOTING GUIDE</h1>
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6d00"></div>Symptom</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div>Cause</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div>Fix</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff1744"></div>Warning</div>
+</div>
+
+<div class="toc">
+  <strong style="color:#00e676;font-size:12px;letter-spacing:1px;">CONTENTS</strong>
+  <a href="#teensy">1. Teensy Connection Issues</a>
+  <a href="#camera">2. Camera / Video Issues</a>
+  <a href="#slam">3. SLAM / Navigation Issues</a>
+  <a href="#ekf">4. EKF / Odometry Issues</a>
+  <a href="#build">5. Build Issues</a>
+  <a href="#network">6. Network / VPS Issues</a>
+  <a href="#imu">7. IMU Issues (BNO085)</a>
+  <a href="#slambridge">8. slam_bridge.py Issues</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. TEENSY CONNECTION                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="teensy">
+<h2>1. TEENSY CONNECTION ISSUES</h2>
+<p class="note">Control Teensy: 192.168.1.177:23 &mdash; Sensor Teensy: 192.168.1.178:23 &mdash; TeensyLink reconnects with 2s backoff.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">Control/Sensor: connect failed errno=113 (No route to host)</td>
+    <td class="cause">Teensy is on wrong subnet. FLIR Tau default IP was <code>192.168.0.71</code> &mdash; if the Teensy was flashed with a 192.168.<strong>0</strong>.x address instead of 192.168.<strong>1</strong>.x, it will be unreachable from the Jetson (192.168.1.167).</td>
+    <td class="fix">Verify Teensy sketch has the correct static IP:<br>
+      <code>IPAddress ip(192, 168, 1, 177);</code> for Control<br>
+      <code>IPAddress ip(192, 168, 1, 178);</code> for Sensor<br>
+      Reflash the sketch if wrong. Check with: <code>ping 192.168.1.177</code></td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Teensy not reachable &mdash; ping times out</td>
+    <td class="cause">NativeEthernet was not initialised before UART Serial. Teensy 4.1 has a DMA channel conflict &mdash; Ethernet.begin() must run BEFORE any Serial.begin() calls or the Ethernet hardware silently fails to initialise.</td>
+    <td class="fix">In the Teensy sketch <code>setup()</code>, ensure:<br>
+<pre>Ethernet.begin(mac, ip);   // FIRST
+// ... then ...
+Serial3.begin(115200);     // AFTER Ethernet</pre>
+    This applies to both Control and Sensor Teensy sketches.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>Sensor: TCP closed by peer</code> repeating every 2s</td>
+    <td class="cause">Teensy sketch accepts a connection but immediately closes it, or the Teensy is rebooting in a loop (power brown-out, watchdog reset).</td>
+    <td class="fix">Check Teensy power supply &mdash; USB must provide clean 5V. Check sketch for crash in <code>loop()</code>. Connect via Arduino Serial Monitor to see boot messages. TeensyLink will auto-reconnect every 2s.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">SENSOR_READY never received &mdash; no IMU/GPS data</td>
+    <td class="cause">The Sensor Teensy sends <code>SENSOR_READY</code> on new client connection, but the C++ app's <code>connectSensor()</code> immediately sends <code>IMU_ON</code> and <code>IMU_RATE 50</code> via the onConnect callback. If the Teensy hangs during BNO085 init, it never gets to the network accept loop.</td>
+    <td class="fix">Verify BNO085 wiring (PS0=GND, PS1=3V3 for SH2-UART mode). Check that <code>bno.begin_UART()</code> returns true. The IMU must be physically present and powered &mdash; <code>begin_UART()</code> blocks for several seconds on failure.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Teensy connects but data is garbled or partial</td>
+    <td class="cause">TCP_NODELAY is set on the socket (TeensyLink line 50), which is correct. But if the Teensy sends data without newline terminators, the line parser accumulates indefinitely.</td>
+    <td class="fix">Ensure every Teensy output line ends with <code>\n</code>. The C++ rxLoop splits on <code>\n</code> and strips trailing <code>\r</code>. Verify with <code>nc 192.168.1.178 23</code> from the Jetson to see raw output.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Reconnection loop: connect succeeds but immediately disconnects</td>
+    <td class="cause">Teensy NativeEthernet server only accepts one client at a time. If a stale socket from a previous C++ app run is still in TIME_WAIT on the Teensy side, it may reject the new connection.</td>
+    <td class="fix">Power-cycle the Teensy to clear stale sockets. The C++ TeensyLink uses a 2s connect timeout with non-blocking connect + select(), so it will retry. Wait ~10s for the previous connection to fully time out.</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  <strong>Quick check:</strong> From Jetson terminal: <code>nc -w2 192.168.1.178 23</code> &mdash; you should see <code>SENSOR_READY</code> followed by <code>YPR</code> lines if IMU is enabled. For Control: <code>nc -w2 192.168.1.177 23</code>.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. CAMERA ISSUES                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="camera">
+<h2>2. CAMERA / VIDEO ISSUES</h2>
+<p class="note">Stereo camera: 2560x720 MJPEG @ 30fps via V4L2. Detection uses left half (1280x720). FLIR Tau: RTSP at 192.168.1.71.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">Camera runs at 3fps instead of 30fps</td>
+    <td class="cause"><span class="warn">Critical V4L2 gotcha:</span> The stereo camera at 2560x720 <strong>only supports 30fps in MJPEG mode</strong>. If FOURCC is not set to MJPG before setting resolution, or if any FPS other than 30 is requested, V4L2 falls back to raw YUV which maxes out at ~3fps due to USB bandwidth.</td>
+    <td class="fix">The open sequence must be exactly:
+<pre>cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));  // FIRST
+cap.set(CAP_PROP_FRAME_WIDTH,  2560);
+cap.set(CAP_PROP_FRAME_HEIGHT,  720);
+cap.set(CAP_PROP_FPS, 30);  // must be exactly 30</pre>
+    The FOURCC must be set <strong>before</strong> the resolution. Any other FPS value (25, 60, etc.) causes fallback to YUV.<br>
+    File: <span class="file">stereo_depth.cpp</span> line 125-128, <span class="file">object_detection.cpp</span> line 374-377.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Detection FPS shows ~15fps on first start, recovers to ~28fps after a few seconds</td>
+    <td class="cause">V4L2 camera warm-up. The USB camera driver takes 1-3 seconds to stabilise its internal MJPEG encoder after opening. During this period frames are decoded slowly or arrive at irregular intervals.</td>
+    <td class="fix">This is normal behaviour. The detection loop in <span class="file">object_detection.cpp</span> starts counting FPS from the first frame. Wait 5-10 seconds for the reported FPS to stabilise. If it stays at 15fps, check that no other process has the camera open (<code>fuser /dev/video*</code>).</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>cam1: no detection camera found &mdash; retrying</code></td>
+    <td class="cause">The detection camera scan (devices 0-7) skips any device that accepts 2560x720 (identifies it as the stereo camera). If the only camera is the stereo cam, or if the detection cam is on /dev/video8+, it will not be found.</td>
+    <td class="fix">Use a udev symlink path for the detection camera:<br>
+    <code>--cam1 /dev/video-detect</code><br>
+    Or if running in stereo-fallback mode (no separate detection camera), pass <code>--cam1 ""</code> to use the left half of the stereo camera via StereoDepth frame sharing.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>StereoDepth: camera lost &mdash; reconnecting</code></td>
+    <td class="cause">30 consecutive empty <code>grab()</code> calls. The USB camera was physically disconnected, or another process opened the same /dev/video device.</td>
+    <td class="fix">Check USB cable. Check no other process has the camera: <code>fuser /dev/video*</code>. The stereo depth thread will auto-reconnect. If both StereoDepth and ObjectDetection try to open the same physical camera, one will fail &mdash; ensure they use different devices or use stereo-fallback mode.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>RTSP: open failed &mdash; retrying in 5s</code> (FLIR thermal)</td>
+    <td class="cause">FLIR Tau is on <code>192.168.1.71</code> (previously 192.168.<strong>0</strong>.71). RTSP URL: <code>rtsp://192.168.1.71/z3-2.sdp</code>. If the FLIR is still on the old 192.168.0.x subnet it won't be reachable.</td>
+    <td class="fix">Check config.json <code>"cam2_rtsp"</code> matches the FLIR's actual IP:<br>
+    <code>"cam2_rtsp": "rtsp://192.168.1.71/z3-2.sdp"</code><br>
+    Test with: <code>ffprobe rtsp://192.168.1.71/z3-2.sdp</code><br>
+    The RTSP thread retries every 5s and reconnects after 10 consecutive read failures. This is non-blocking &mdash; the main detection loop runs without the thermal camera.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>StereoDepth: cannot open calibration file</code></td>
+    <td class="cause">Calibration XML not found at the path specified in config.json.</td>
+    <td class="fix">Default path: <code>/home/james/stereo_calib/stereo_params_cuda.xml</code><br>
+    Verify the file exists and contains <code>map1x</code>, <code>map1y</code>, <code>map2x</code>, <code>map2y</code>, <code>P1</code>, and <code>T</code> matrices. Set in config.json:<br>
+    <code>"stereo_calib_xml": "/home/james/stereo_calib/stereo_params_cuda.xml"</code></td>
+  </tr>
+</table>
+
+<div class="warn-box">
+  <strong>Camera resolution rule:</strong> 2560x720 MJPEG <strong>only supports 30fps</strong>. Requesting any other FPS causes V4L2 to silently fall back to raw YUV at 3fps. Always use <code>CAP_PROP_FPS, 30</code>.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. SLAM / NAVIGATION                                                       -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="slam">
+<h2>3. SLAM / NAVIGATION ISSUES</h2>
+<p class="note">YDLIDAR X3 via ROS2 &rarr; SLAM Toolbox &rarr; slam_bridge.py (TCP :9997) &rarr; C++ app. Nav2 SmacPlanner2D for path planning.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">Lidar not publishing /scan topic</td>
+    <td class="cause"><span class="warn">Wrong params file.</span> The YDLIDAR X3 requires <code>X3.yaml</code>, NOT <code>ydlidar.yaml</code>. The default <code>ydlidar.yaml</code> has wrong baud rate and channel settings for the X3 model.</td>
+    <td class="fix">Use the correct params file:
+<pre>ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node \
+  --ros-args --params-file ~/ros2_ws/src/ydlidar_ros2_driver/params/X3.yaml</pre>
+    Required X3 params: <code>baud_rate: 115200</code>, <code>single_channel: true</code>, <code>fixed_resolution: true</code>.<br>
+    start_tank.sh already uses the correct path (<span class="file">start_tank.sh</span> line 17).</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Lidar driver starts but /scan is empty or has NaN ranges</td>
+    <td class="cause">YDLIDAR X3 USB device permissions or wrong /dev/ttyUSB* device. Another process may have the serial port open.</td>
+    <td class="fix">Check device exists: <code>ls /dev/ttyUSB*</code><br>
+    Set permissions: <code>sudo chmod 666 /dev/ttyUSB0</code><br>
+    Or use a udev rule. Kill stale processes: <code>pkill -f ydlidar</code><br>
+    Verify with: <code>ros2 topic echo /scan --once</code></td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">SLAM Toolbox not converging &mdash; /pose not publishing</td>
+    <td class="cause">TF tree is incomplete. SLAM Toolbox requires the chain: <code>odom &rarr; base_link &rarr; laser_frame</code>. If slam_bridge.py has not yet published the dynamic <code>odom &rarr; base_link</code> TF, the scan message filter times out.</td>
+    <td class="fix">slam_bridge.py publishes an initial identity <code>odom &rarr; base_link</code> TF on startup, then waits 3s before launching SLAM Toolbox (via a timer callback). If SLAM still fails:<br>
+    <code>ros2 run tf2_ros tf2_echo odom base_link</code><br>
+    <code>ros2 run tf2_ros tf2_echo base_link laser_frame</code><br>
+    Both must resolve. If not, restart slam_bridge.py.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Nav2 planner_server crashes: "costmap node already exists"</td>
+    <td class="cause"><span class="warn">Do NOT launch a standalone <code>nav2_costmap_2d</code> node.</span> The <code>planner_server</code> creates its own costmap internally. Launching a separate costmap node causes a name collision.</td>
+    <td class="fix">The lifecycle manager in <span class="file">nav2_planner_launch.py</span> only manages <code>['planner_server']</code>. Remove any standalone costmap node from your launch configuration. The planner's internal costmap reads /scan and /map topics directly.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Nav2 planning fails &mdash; <code>planned_path ok:false</code></td>
+    <td class="cause">Nav2 planner not active (lifecycle not configured), or no costmap data (no /scan, no /map), or goal is in an obstacle/unknown cell.</td>
+    <td class="fix">Check planner lifecycle state: <code>ros2 lifecycle get /planner_server</code> (should be "active").<br>
+    Check costmap is receiving data: <code>ros2 topic echo /global_costmap/costmap --once</code><br>
+    The C++ Nav2Planner falls back to direct GPS navigation if Nav2 is unavailable &mdash; missions will still work but without obstacle avoidance.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Obstacle avoidance not working despite lidar running</td>
+    <td class="cause">slam_bridge.py not connected to C++ app. The scan data flows: ydlidar &rarr; /scan &rarr; slam_bridge.py &rarr; TCP :9997 &rarr; C++ app. If the TCP link is down, the C++ app gets no lidar data.</td>
+    <td class="fix">Check slam_link connection in the C++ log: <code>SLAM bridge connected on 127.0.0.1:9997</code>. If missing, ensure slam_bridge.py is running and listening on port 9997. The SlamLink auto-reconnects every 2s.</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  <strong>TF tree (required):</strong> <code>map &rarr; odom &rarr; base_link &rarr; laser_frame</code><br>
+  SLAM Toolbox publishes <code>map &rarr; odom</code>. slam_bridge.py (or EKF) publishes <code>odom &rarr; base_link</code>. Static TF for <code>base_link &rarr; laser_frame</code>.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. EKF / ODOMETRY                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="ekf">
+<h2>4. EKF / ODOMETRY ISSUES</h2>
+<p class="note">robot_localization EKF fuses /odom + /imu/data. navsat_transform converts GPS&harr;odom. Requires wheel encoders.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">EKF node crashes or produces wild pose estimates on startup</td>
+    <td class="cause"><span class="warn">Wheel encoders are not physically wired yet.</span> The EKF is configured to fuse /odom (wheel odometry), but without encoders the /odom topic either has zero velocity or is not published. The EKF has no position/velocity source and diverges.</td>
+    <td class="fix">Use the <code>--no-ekf</code> flag until wheel encoders are wired:
+<pre>bash start_tank.sh --no-ekf</pre>
+    When EKF is skipped, slam_bridge.py publishes <code>odom &rarr; base_link</code> dynamically instead. The system works without EKF &mdash; it just lacks fused odometry.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">navsat_transform_node logs: "Datum recalculation" warnings repeatedly</td>
+    <td class="cause">GPS cold start drift. After power-on, the GPS module (BN880) takes 2-5 minutes to get a stable fix. During this time, position and altitude values drift significantly, causing navsat_transform to repeatedly recalculate its datum.</td>
+    <td class="fix">This is <strong>normal behaviour</strong> for the first 2-5 minutes after GPS cold start. Wait for the GPS to stabilise (check <code>sats</code> count &mdash; need 6+ for good fix, <code>quality</code> should be 1 or 2). The warnings will stop once altitude/position converge.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Odometry not activating &mdash; slam_bridge stays in ODOM_INACTIVE</td>
+    <td class="cause">slam_bridge.py requires 5 consecutive fresh encoder reads (age_ms < 200) to transition from INACTIVE to ACTIVE. The SlamLink TX thread sends encoder data every 100ms, but only if <code>age_ms < 200</code>. If encoders are stale, no odom_data messages are sent.</td>
+    <td class="fix">Verify encoder data is arriving from the Sensor Teensy:<br>
+    Check C++ log for <code>ENC &lt;left&gt; &lt;right&gt;</code> lines.<br>
+    Once 5 fresh reads arrive, slam_bridge transitions to ACTIVE, kills SLAM Toolbox, and restarts it with the odom-enabled params YAML.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">GPS&harr;map coordinate conversion is wrong &mdash; waypoints appear offset</td>
+    <td class="cause">GPS heading auto-calibration uses an EMA filter comparing GPS course to IMU yaw. If the robot hasn't moved enough (speed &lt; 0.5 knots), the heading offset won't be calibrated, causing GPS&rarr;map conversion to be rotated.</td>
+    <td class="fix">Drive the robot in a straight line for 5-10 seconds to allow the heading calibration EMA to converge. The <code>mission_moving_knots</code> threshold is 0.5 knots by default (configurable in config.json). Check the slam_bridge.py log for "heading offset" calibration messages.</td>
+  </tr>
+</table>
+
+<div class="warn-box">
+  <strong>Do not run EKF without wheel encoders.</strong> The EKF has no velocity/position source without them and will produce garbage output. Always use <code>--no-ekf</code> until encoders are physically wired and verified.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. BUILD ISSUES                                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="build">
+<h2>5. BUILD ISSUES</h2>
+<p class="note">Build: <code>cmake --build build</code> in /home/james/YOLOv8-TensorRT/csrc/jetson/detect/. Deploy via paramiko SFTP.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">cmake --build recompiles files you didn't change</td>
+    <td class="cause"><code>cmake --build build</code> recompiles <strong>all changed source files</strong>, not just the one you deployed. If you uploaded comms.cpp but object_detection.cpp has in-progress local changes from a previous SFTP, both will be compiled.</td>
+    <td class="fix">Before deploying, verify which files have been modified on the Jetson:
+<pre>ls -lt /home/james/YOLOv8-TensorRT/csrc/jetson/detect/*.cpp | head -5</pre>
+    Only SFTP the files you intend to change. Use <span class="file">deploy_phase4.py</span> which uses paramiko SFTP for targeted file upload.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Build fails: missing include or linker error</td>
+    <td class="cause">A header was modified locally but not uploaded, or a new .cpp file was added to the source but not to CMakeLists.txt.</td>
+    <td class="fix">Check <span class="file">CMakeLists.txt</span> has all .cpp files listed. Deploy both .cpp and include/*.h files. All source files must be uploaded together if dependencies changed.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">AccelStepper compilation error on Windows (Control Teensy sketch)</td>
+    <td class="cause">AccelStepper library source is at a OneDrive path:<br>
+    <code>E:\OneDrive - Buzzgeef\Documents 1\Arduino\libraries\AccelStepper\src</code><br>
+    If OneDrive sync is paused or the files are cloud-only, the Arduino IDE cannot find them.</td>
+    <td class="fix">Ensure OneDrive is syncing and the AccelStepper library files are available locally (not cloud-only). Right-click the folder in Explorer &rarr; "Always keep on this device". Alternatively, install AccelStepper via Arduino Library Manager to get a local copy.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Cannot use git on Jetson &mdash; deploy directory is dirty</td>
+    <td class="cause">The deploy folder (<code>/home/james/YOLOv8-TensorRT/csrc/jetson/detect/</code>) is inside the upstream YOLOv8-TensorRT repo. Running <code>git pull</code> or <code>git checkout</code> would overwrite custom files.</td>
+    <td class="fix">Never use git in the Jetson deploy directory. Always deploy from the Windows dev machine (<code>c:\python\tank-c2\</code>) via paramiko SFTP. Never use sshpass or scp &mdash; sshpass is not available on Windows, and scp password auth is blocked on the Jetson.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Deploy fails: "Authentication failed" or "Connection refused"</td>
+    <td class="cause">Jetson SSH credentials changed, or the Jetson is not on the network.</td>
+    <td class="fix">Jetson SSH: <code>james@192.168.1.167</code>. Verify connectivity: <code>ping 192.168.1.167</code>. The deploy script (<span class="file">deploy_phase4.py</span>) uses paramiko for SFTP + SSH command execution.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. NETWORK / VPS                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="network">
+<h2>6. NETWORK / VPS ISSUES</h2>
+<p class="note">VPS: 87.106.188.134 &mdash; Node.js server.js &mdash; WebSocket relay &mdash; TCP :9999 from Jetson via Tailscale VPN.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">VPS web UI shows "Tank Offline" (grey status)</td>
+    <td class="cause">The C++ app's Web IPC (TCP :9999) connection to the VPS server.js is down. This link goes over Tailscale VPN. Common causes: Tailscale logged out on Jetson, Jetson has no internet, or the C++ app crashed.</td>
+    <td class="fix">
+      1. Check Tailscale status on Jetson: <code>tailscale status</code><br>
+      2. If logged out: <code>sudo tailscale up</code><br>
+      3. Check if C++ app is running: <code>pgrep -a yolov8</code><br>
+      4. Check VPS server.js: <code>ssh root@87.106.188.134 'pm2 list'</code><br>
+      5. Test TCP link: <code>nc -w2 &lt;vps-tailscale-ip&gt; 9999</code>
+    </td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Log: <code>Web IPC bind failed: Address already in use</code></td>
+    <td class="cause">A previous instance of the C++ app is still running and holding port 9999. start_tank.sh kills stale processes on startup, but if you ran the binary manually, the old one may still be alive.</td>
+    <td class="fix">Kill the old process:
+<pre>pkill -f "yolov8.*engine"
+# or
+fuser -k 9999/tcp</pre>
+    start_tank.sh handles this automatically (line 29).</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">config.json not found &mdash; all values are defaults</td>
+    <td class="cause">The C++ app loads <code>config.json</code> relative to the current working directory (default: <code>"config.json"</code>). If you run the binary from a different directory, it won't find the config file.</td>
+    <td class="fix">Either <code>cd</code> to the detect directory before running, or use the <code>--config</code> flag:
+<pre>./build/yolov8 $ENGINE --config /path/to/config.json</pre>
+    start_tank.sh passes <code>--config $DETECT/config.json</code> (line 102) which uses the absolute path.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">VPS server.js not restarting after deploy</td>
+    <td class="cause">pm2 reload was not called after SFTP upload.</td>
+    <td class="fix">After uploading files to <code>/var/www/tank-c2/</code>:
+<pre>ssh root@87.106.188.134 'pm2 reload /var/www/tank-c2/ecosystem.config.js'</pre>
+    Check status: <code>pm2 list</code>, logs: <code>pm2 logs tank-c2</code></td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">WebSocket connection fails from browser</td>
+    <td class="cause">Browser WebSocket connects to the VPS, which relays to the Jetson via TCP :9999. If the VPS Node.js process crashed, or the browser has a stale session cookie (7-day expiry), the WS handshake fails.</td>
+    <td class="fix">Check VPS: <code>pm2 list</code> (should show "online").<br>
+    Clear browser cookies and re-login at /login.<br>
+    Check VPS firewall allows the WS port.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. IMU ISSUES                                                              -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="imu">
+<h2>7. IMU ISSUES (BNO085)</h2>
+<p class="note">BNO085 in SH2-UART mode (PS0=GND, PS1=3V3). Body IMU on Sensor Teensy (Serial3). PTU IMU on Control Teensy (Serial5).</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">BNO085 init fails &mdash; begin_UART() returns false</td>
+    <td class="cause">PS0 and PS1 mode-select pins are not wired correctly. The BNO085 supports multiple protocols: <strong>PS0=GND, PS1=3V3</strong> selects SH2-UART mode. Any other combination selects I2C or SPI, causing UART communication to fail.</td>
+    <td class="fix">Verify wiring:<br>
+      <strong>PS0 &rarr; GND</strong> (hardwired, not floating)<br>
+      <strong>PS1 &rarr; 3V3</strong> (hardwired, not floating)<br>
+      Both pins must be connected <strong>before power is applied</strong>. The mode is latched at boot. Power-cycle the IMU after fixing wiring.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Second BNO085 instance fails &mdash; one Teensy reads IMU, the other doesn't</td>
+    <td class="cause"><span class="warn">Adafruit_BNO08x supports only ONE UART instance per Teensy.</span> The library uses global HAL state for UART communication. You cannot have two BNO085 sensors on two different Serial ports on the same Teensy.</td>
+    <td class="fix">Use one BNO085 per Teensy only. The Body IMU is on Sensor Teensy (Serial3), the PTU IMU is on Control Teensy (Serial5). This is the correct architecture &mdash; do not try to add a second IMU to either Teensy.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">IMU data stops after a few minutes &mdash; YPR lines stop appearing</td>
+    <td class="cause">The BNO085 performed an internal reset (watchdog, power glitch, etc.) but the sketch did not detect it. After reset, all enabled reports are cleared and must be re-enabled.</td>
+    <td class="fix">The Teensy sketch must check <code>bno.wasReset()</code> every loop iteration and re-enable reports:
+<pre>if (bno.wasReset()) {
+    bno.enableReport(SH2_ROTATION_VECTOR, 20000);  // 20ms = 50Hz
+}</pre>
+    Also check for power supply stability &mdash; brown-outs cause resets.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">IMU init hangs the Teensy &mdash; Ethernet never starts</td>
+    <td class="cause"><span class="warn">Ethernet must init BEFORE UART on Teensy 4.1.</span> NativeEthernet and Hardware Serial both use DMA channels. If Serial.begin() runs before Ethernet.begin(), the DMA allocation conflicts and Ethernet silently fails, or the sketch hangs.</td>
+    <td class="fix">Correct init order in <code>setup()</code>:
+<pre>Ethernet.begin(mac, ip);       // FIRST - DMA channels allocated
+server.begin();
+Serial.begin(115200);          // OK after Ethernet
+Serial.setTimeout(0);
+bno.begin_UART(&amp;Serial3);     // OK after Ethernet
+bno.enableReport(SH2_ROTATION_VECTOR, 20000);</pre></td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Compilation error: "PI was not declared" or "PI redefined"</td>
+    <td class="cause">The Adafruit BNO08x library internally uses <code>PI</code> which conflicts with <code>math.h</code>'s definition on some platforms.</td>
+    <td class="fix">Add before the BNO08x include:
+<pre>#undef PI
+#define PI 3.14159265358979323846
+#include &lt;Adafruit_BNO08x.h&gt;</pre></td>
+  </tr>
+</table>
+
+<div class="warn-box">
+  <strong>BNO085 init sequence:</strong> <code>Serial.begin(115200)</code> &rarr; <code>Serial.setTimeout(0)</code> &rarr; <code>begin_UART(&amp;SerialN)</code> &rarr; <code>enableReport(SH2_ROTATION_VECTOR, 20000)</code>. Check <code>wasReset()</code> every loop and re-enable reports.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. SLAM BRIDGE                                                             -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="slambridge">
+<h2>8. SLAM_BRIDGE.PY ISSUES</h2>
+<p class="note">slam_bridge.py: ROS2 node + TCP server (:9997). Manages SLAM Toolbox lifecycle, publishes /imu/data, /gps/fix, odom&rarr;base_link TF.</p>
+
+<table>
+  <tr>
+    <th style="width:25%">Symptom</th>
+    <th style="width:30%">Cause</th>
+    <th style="width:45%">Fix</th>
+  </tr>
+  <tr>
+    <td class="symptom">slam_bridge.py crashes on startup: AttributeError: '_dyn_tf_broadcaster'</td>
+    <td class="cause"><span class="warn">Init order bug.</span> <code>_dyn_tf_broadcaster</code> (TransformBroadcaster) must be created <strong>before</strong> any call to <code>_publish_odom_tf()</code>. If code is added to <code>__init__</code> that calls <code>_publish_odom_tf()</code> before the broadcaster is assigned, it crashes.</td>
+    <td class="fix">In <span class="file">slam_bridge.py</span>, ensure the order in <code>__init__</code> is:
+<pre># 1. Static TF broadcaster (base_link &rarr; laser_frame)
+self._tf_broadcaster = StaticTransformBroadcaster(self)
+self._tf_broadcaster.sendTransform([...])
+
+# 2. Dynamic TF broadcaster (MUST be before _publish_odom_tf)
+self._dyn_tf_broadcaster = TransformBroadcaster(self)
+
+# 3. NOW safe to publish initial identity odom &rarr; base_link
+self._publish_odom_tf(0.0, 0.0, 0.0, stamp)</pre>
+    Currently correct in the codebase (lines 106, 126, 130). Do not reorder.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">Odometry state stuck in INACTIVE despite encoders running</td>
+    <td class="cause">The odom state machine requires 5 consecutive fresh reads (<code>age_ms &lt; 200</code>) to transition INACTIVE &rarr; ACTIVE. If even one stale read interrupts the sequence, the fresh counter resets. The SlamLink TX thread on the C++ side only sends odom_data when <code>age_ms &lt; 200</code>.</td>
+    <td class="fix">Check that encoder data is consistently fresh:<br>
+    1. On C++ side: verify <code>ENC &lt;left&gt; &lt;right&gt;</code> arrives at 10Hz from Sensor Teensy.<br>
+    2. slam_bridge.py logs transitions: look for "odom INACTIVE -&gt; ACTIVE".<br>
+    3. If encoder age is borderline (~200ms), the data may alternate fresh/stale. The check interval is every 100ms from the SlamLink TX thread.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">SLAM Toolbox restarts repeatedly (kill/restart loop)</td>
+    <td class="cause">Odometry state is flapping between ACTIVE and INACTIVE. Each transition triggers: save map &rarr; kill SLAM Toolbox &rarr; restart with matching params yaml (odom or no-odom). If encoder data is intermittent, this causes rapid restart cycles.</td>
+    <td class="fix">Fix the root cause: ensure encoder data is consistently present or consistently absent. Intermittent encoder connections (loose wire, Teensy brown-out) cause state flapping. The thresholds are: 5 fresh reads to activate (FRESH_RUNS_TO_ACTIVATE), 3 stale reads to deactivate (STALE_RUNS_TO_DEACTIVATE).</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">GPS data not publishing on /gps/fix topic</td>
+    <td class="cause">GPS publishing is throttled to 1Hz in slam_bridge.py (<code>_last_gps_pub_time</code>). Also, the C++ app only forwards GPS data after a valid NMEA checksum passes. If the GPS module is indoors or has no fix (<code>quality=0</code>), no data is forwarded.</td>
+    <td class="fix">Take the robot outdoors for GPS fix. Check Sensor Teensy is forwarding NMEA: <code>nc 192.168.1.178 23</code> should show <code>$GNGGA</code> lines. The comms.cpp NMEA parser validates checksums and requires <code>quality &gt; 0</code> before setting GPS data.</td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">slam_bridge.py: "nav2_msgs not installed &mdash; path planning disabled"</td>
+    <td class="cause">The nav2_msgs package is not installed in the ROS2 environment.</td>
+    <td class="fix">Install Nav2 dependencies:
+<pre>sudo apt install ros-humble-nav2-planner ros-humble-nav2-costmap-2d \
+  ros-humble-nav2-lifecycle-manager ros-humble-nav2-msgs</pre>
+    Then re-source: <code>source /opt/ros/humble/setup.bash</code></td>
+  </tr>
+  <tr class="sep"><td colspan="3"></td></tr>
+  <tr>
+    <td class="symptom">C++ app cannot connect to slam_bridge: "SLAM bridge not reachable on 127.0.0.1:9997"</td>
+    <td class="cause">slam_bridge.py is not running, or it crashed before starting its TCP server. The TCP server starts in a daemon thread during <code>__init__</code>.</td>
+    <td class="fix">Check slam_bridge.py is running: <code>pgrep -af slam_bridge</code>.<br>
+    Check port 9997: <code>ss -tlnp | grep 9997</code>.<br>
+    The SlamLink in the C++ app retries every 2s. If slam_bridge.py starts later (normal in start_tank.sh &mdash; it starts before the C++ app), the connection will establish automatically.</td>
+  </tr>
+</table>
+
+<div class="info-box">
+  <strong>start_tank.sh startup order:</strong>
+  1. ydlidar driver (2s wait) &rarr;
+  2. slam_bridge.py (4s wait for SLAM Toolbox TF) &rarr;
+  3. EKF + navsat (if enabled) &rarr;
+  4. Nav2 planner (2s wait) &rarr;
+  5. mjpeg_bridge.py &rarr;
+  6. C++ app.<br>
+  The delays ensure each subsystem is ready before the next starts.
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- QUICK REFERENCE                                                            -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>QUICK REFERENCE &mdash; DIAGNOSTIC COMMANDS</h2>
+<table>
+  <tr>
+    <th>Check</th>
+    <th>Command</th>
+  </tr>
+  <tr>
+    <td class="cause">Teensy reachable</td>
+    <td><code>ping -c2 192.168.1.177 && ping -c2 192.168.1.178</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Teensy raw data</td>
+    <td><code>nc -w2 192.168.1.178 23</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Camera devices</td>
+    <td><code>v4l2-ctl --list-devices</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Camera modes</td>
+    <td><code>v4l2-ctl -d /dev/video0 --list-formats-ext</code></td>
+  </tr>
+  <tr>
+    <td class="cause">ROS2 topics active</td>
+    <td><code>ros2 topic list</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Lidar publishing</td>
+    <td><code>ros2 topic hz /scan</code></td>
+  </tr>
+  <tr>
+    <td class="cause">TF tree complete</td>
+    <td><code>ros2 run tf2_ros tf2_echo map base_link</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Nav2 planner state</td>
+    <td><code>ros2 lifecycle get /planner_server</code></td>
+  </tr>
+  <tr>
+    <td class="cause">SLAM bridge TCP</td>
+    <td><code>ss -tlnp | grep 9997</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Web IPC port</td>
+    <td><code>ss -tlnp | grep 9999</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Running processes</td>
+    <td><code>pgrep -af "yolov8|slam_bridge|mjpeg_bridge|ydlidar"</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Kill all tank processes</td>
+    <td><code>pkill -f "yolov8|slam_bridge|mjpeg_bridge|ydlidar|planner_server|ekf_node"</code></td>
+  </tr>
+  <tr>
+    <td class="cause">VPS server status</td>
+    <td><code>ssh root@87.106.188.134 'pm2 list'</code></td>
+  </tr>
+  <tr>
+    <td class="cause">Tailscale status</td>
+    <td><code>tailscale status</code></td>
+  </tr>
+  <tr>
+    <td class="cause">USB devices</td>
+    <td><code>lsusb && ls /dev/ttyUSB*</code></td>
+  </tr>
+</table>
+</div>
+
+<script>
+document.querySelectorAll('table').forEach(function(t){
+  // Wrap in horizontal-scroll container
+  var w=document.createElement('div');
+  w.style.cssText='overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0';
+  t.parentNode.insertBefore(w,t);
+  t.style.margin='0';
+  w.appendChild(t);
+  // Card layout: find header row
+  t.classList.add('card-tbl');
+  var rows=Array.from(t.querySelectorAll('tr'));
+  var hdrRow=rows.find(function(r){return r.querySelector('th')});
+  if(!hdrRow)return;
+  hdrRow.classList.add('hdr-row');
+  var headers=Array.from(hdrRow.querySelectorAll('th')).map(function(th){return th.textContent.trim()});
+  rows.forEach(function(tr){
+    // Mark spacer rows (rows where first td has height style or colspan=all)
+    var tds=tr.querySelectorAll('td');
+    if(tds.length===1&&tds[0].getAttribute('colspan'))tr.classList.add('spacer-row');
+    // Add data-label to each td
+    tds.forEach(function(td,i){if(headers[i])td.setAttribute('data-label',headers[i])});
+  });
+});
+</script>
+</body>
+</html>

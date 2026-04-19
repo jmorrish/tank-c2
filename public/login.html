@@ -3,27 +3,127 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tank C2 — Login</title>
+<title>UMBRIS — Authenticate</title>
+<link rel="preload" href="/models/tank.glb" as="fetch" crossorigin>
+<script type="module" src="/assets/model-viewer.min.js"></script>
 <style>
 :root {
   --bg:#0a0e1a; --panel:#111827; --border:#1f2937;
   --accent:#00e676; --text:#e2e8f0; --muted:#64748b; --danger:#ff1744;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
 body {
   background:var(--bg); color:var(--text);
   font-family:'Courier New',monospace;
-  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  height:100vh; display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
 }
+
+/* ═══ LAYER 0: 3D model fills viewport ═══ */
+#login-viewer {
+  position:fixed; inset:0; z-index:0;
+  width:100%; height:100%;
+  --progress-bar-color:#00e676;
+  --progress-mask:#0a0e1a;
+}
+
+/* ═══ LAYER 1: frosted glass over the entire scene ═══ */
+#frost {
+  position:fixed; inset:0; z-index:3;
+  backdrop-filter:blur(8px) brightness(0.7);
+  background:rgba(10,14,26,0.35);
+  pointer-events:none;
+  transition:backdrop-filter 1s ease, background 1s ease;
+}
+#frost.lifting {
+  backdrop-filter:blur(0px) brightness(1);
+  background:rgba(10,14,26,0);
+}
+
+/* ═══ LAYER 2: vignette (above frost, below card) ═══ */
+#vignette {
+  position:fixed; inset:0; z-index:4;
+  background:radial-gradient(ellipse at center, transparent 25%, #0a0e1a 85%);
+  pointer-events:none;
+  transition:opacity 1s ease;
+}
+#vignette.lifting { opacity:0; }
+
+/* ═══ LAYER 3: scanlines ═══ */
+#scanlines {
+  position:fixed; inset:0; z-index:5;
+  background:repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events:none;
+}
+
+/* ═══ LAYER 4: fade-to-black overlay ═══ */
+#fade-black {
+  position:fixed; inset:0; z-index:50;
+  background:#0a0e1a;
+  opacity:0; pointer-events:none;
+  transition:opacity 0.7s ease;
+}
+#fade-black.active { opacity:1; }
+
+/* ═══ LOGIN CARD ═══ */
 .card {
-  background:var(--panel); border:1px solid var(--border);
+  position:relative; z-index:10;
+  background:rgba(17,24,39,0.75);
+  backdrop-filter:blur(12px);
+  border:1px solid rgba(0,230,118,0.2);
   border-radius:8px; padding:2rem; width:100%; max-width:340px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.4);
+  transition:opacity 0.4s ease, transform 0.4s ease;
 }
+.card.unlocking {
+  opacity:0;
+  transform:scale(0.95);
+}
+
+/* HUD corner brackets */
+.hud-corners { position:relative; }
+
+.hud-corners::before, .hud-corners::after,
+.card::before, .card::after {
+  content:''; position:absolute; width:14px; height:14px;
+  border-color:var(--accent); border-style:solid; opacity:0.6;
+  animation:hud-in 0.6s ease forwards;
+}
+.hud-corners::before { top:-16px; left:-16px;   border-width:2px 0 0 2px; }
+.hud-corners::after  { top:-16px; right:-16px;  border-width:2px 2px 0 0; }
+.card::before        { bottom:-16px; left:-16px;  border-width:0 0 2px 2px; }
+.card::after         { bottom:-16px; right:-16px; border-width:0 2px 2px 0; }
+
+@keyframes hud-in {
+  from { opacity:0; transform:scale(1.5); }
+  to   { opacity:0.6; transform:scale(1); }
+}
+
+/* ═══ TEXT ═══ */
 h1 {
-  font-size:1rem; letter-spacing:.15em; text-transform:uppercase;
-  color:var(--accent); margin-bottom:1.5rem; text-align:center;
+  font-size:1.4rem; letter-spacing:.25em; text-transform:uppercase;
+  color:var(--accent); margin-bottom:.4rem; text-align:center;
 }
-label { display:block; font-size:.75rem; color:var(--muted); margin-bottom:.4rem; letter-spacing:.1em; }
+.logo-sub {
+  font-size:.62rem; letter-spacing:.2em; color:var(--muted);
+  text-align:center; margin-bottom:1.8rem; text-transform:uppercase;
+}
+.boot-seq {
+  font-size:.7rem; letter-spacing:.15em; color:var(--accent);
+  text-align:center; margin-bottom:1.5rem;
+  animation:boot-out 0.4s ease 1.8s forwards;
+}
+
+/* ═══ FORM ═══ */
+.login-form {
+  opacity:0;
+  animation:form-in 0.4s ease 1.8s forwards;
+}
+label {
+  display:block; font-size:.75rem; color:var(--muted);
+  margin-bottom:.4rem; letter-spacing:.1em;
+}
 input[type=password] {
   width:100%; background:#0a0e1a; border:1px solid var(--border);
   color:var(--text); padding:.6rem .8rem; border-radius:4px;
@@ -36,25 +136,177 @@ button {
   border:none; padding:.65rem; border-radius:4px;
   font-family:inherit; font-size:.9rem; font-weight:700;
   letter-spacing:.1em; cursor:pointer; text-transform:uppercase;
+  transition:opacity 0.2s;
 }
 button:hover { opacity:.9; }
+button:disabled { opacity:0.5; cursor:default; }
 .err {
   background:#2d0a0a; border:1px solid var(--danger);
   color:var(--danger); border-radius:4px;
   padding:.5rem .8rem; font-size:.8rem;
   margin-bottom:1rem; text-align:center;
 }
+
+/* ═══ KEYFRAMES ═══ */
+@keyframes boot-out { to { opacity:0; height:0; margin:0; overflow:hidden; } }
+@keyframes form-in  { to { opacity:1; } }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>▸ Tank C2</h1>
-  <form method="POST" action="/login">
-    <script>if(location.search.includes('err=1'))document.write('<div class="err">Incorrect password</div>')</script>
-    <label for="pwd">Password</label>
-    <input type="password" id="pwd" name="password" autofocus autocomplete="current-password">
-    <button type="submit">Authenticate</button>
-  </form>
+
+<!-- 3D background -->
+<model-viewer
+  id="login-viewer"
+  src="/models/tank.glb"
+  auto-rotate
+  auto-rotate-delay="0"
+  rotation-per-second="8deg"
+  camera-orbit="30deg 80deg 120%"
+  shadow-intensity="1"
+  environment-image="neutral"
+  exposure="1">
+</model-viewer>
+
+<!-- Frosted glass overlay -->
+<div id="frost"></div>
+<div id="vignette"></div>
+<div id="scanlines"></div>
+<div id="fade-black"></div>
+
+<!-- Login card -->
+<div class="card" id="card">
+  <div class="hud-corners">
+    <h1>◈ UMBRIS</h1>
+    <div class="logo-sub">Autonomous Ground System</div>
+    <div class="boot-seq">INITIALIZING...</div>
+    <form id="login-form" class="login-form">
+      <div id="err-box" class="err" style="display:none">Incorrect password</div>
+      <label for="pwd">Password</label>
+      <input type="password" id="pwd" name="password" autofocus autocomplete="current-password">
+      <button type="submit" id="auth-btn">AUTHENTICATE</button>
+    </form>
+  </div>
 </div>
+
+<script>
+// Force full reload if page is restored from bfcache (back/logout navigation)
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) location.reload();
+});
+
+// ── Login form: fetch + cinematic unlock transition ──────────────────────────
+document.getElementById('login-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var btn    = document.getElementById('auth-btn');
+  var errBox = document.getElementById('err-box');
+
+  btn.textContent = 'AUTHENTICATING...';
+  btn.disabled = true;
+  errBox.style.display = 'none';
+
+  var resp = await fetch('/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({password: document.getElementById('pwd').value}),
+    redirect: 'follow'
+  });
+
+  // If we ended up back at /login — wrong password or rate limited
+  if (resp.url && resp.url.includes('/login')) {
+    btn.textContent = 'AUTHENTICATE';
+    btn.disabled = false;
+    var errParam = new URL(resp.url).searchParams.get('err');
+    errBox.textContent = errParam === 'limit'
+      ? 'Too many attempts — try again in 15 minutes'
+      : 'Incorrect password';
+    errBox.style.display = 'block';
+    document.getElementById('pwd').value = '';
+    document.getElementById('pwd').focus();
+    return;
+  }
+
+  // Correct — play unlock cinematic
+  var card   = document.getElementById('card');
+  var frost  = document.getElementById('frost');
+  var vig    = document.getElementById('vignette');
+  var fadeEl = document.getElementById('fade-black');
+
+  // 1. Card shrinks and fades out
+  card.classList.add('unlocking');
+
+  // 2. Frost lifts simultaneously
+  frost.classList.add('lifting');
+  vig.classList.add('lifting');
+
+  // 3. After frost clears, fade to black then navigate
+  setTimeout(function() {
+    fadeEl.classList.add('active');
+    setTimeout(function() {
+      location.href = '/';
+    }, 750);
+  }, 900);
+});
+</script>
+
+<!-- PTU scanning animation -->
+<script>
+(function(){
+  var viewer = document.getElementById('login-viewer');
+  viewer.addEventListener('load', function() {
+    var scene = null;
+    try { scene = viewer.scene; } catch(e) {}
+    if (!scene || !scene.traverse) {
+      try { scene = viewer.model && viewer.model.scene; } catch(e) {}
+    }
+    if (!scene || !scene.traverse) {
+      Object.getOwnPropertySymbols(viewer).forEach(function(s) {
+        try { var v = viewer[s]; if (v && typeof v.traverse === 'function' && !scene) scene = v; } catch(e) {}
+      });
+    }
+    if (!scene) return;
+
+    var ptuAsm = null, ptuHead = null;
+    var TILT_NAMES = ['PTU_Head-1','OAK-D-Pro-1','flir-tau2-640-v00-1',
+                      'waveshare_tof_sensor_d-1','head_motor_adaptor-1','Z3_Board-1'];
+    var tiltNodes = [];
+    scene.traverse(function(o) {
+      if (o.name === 'PTU_ASM-1') ptuAsm = o;
+      if (o.name === 'PTU_Head-1') ptuHead = o;
+      if (TILT_NAMES.indexOf(o.name) !== -1) tiltNodes.push(o);
+    });
+    if (!ptuAsm || !ptuHead) return;
+
+    var cx = 0, cy = 0, cz = 0;
+    ptuHead.traverseVisible(function(o) {
+      if (!o.geometry || cx !== 0) return;
+      o.updateWorldMatrix(true, false);
+      o.geometry.computeBoundingBox();
+      var bb = o.geometry.boundingBox;
+      var lx = (bb.min.x + bb.max.x) / 2, ly = bb.min.y, lz = (bb.min.z + bb.max.z) / 2;
+      var m = o.matrixWorld.elements;
+      cx = m[0]*lx + m[4]*ly + m[8]*lz + m[12];
+      cy = m[1]*lx + m[5]*ly + m[9]*lz + m[13];
+      cz = m[2]*lx + m[6]*ly + m[10]*lz + m[14];
+    });
+
+    var tiltPivot = new ptuHead.constructor();
+    tiltPivot.position.set(cx, cy, cz);
+    ptuAsm.add(tiltPivot);
+    tiltNodes.forEach(function(n) { tiltPivot.attach(n); });
+
+    var PAN_AMP = 45*Math.PI/180, PAN_OFFSET = -90*Math.PI/180;
+    var TILT_AMP = 18*Math.PI/180, PERIOD = 12;
+
+    function step(ts) {
+      var t = ts / 1000;
+      ptuAsm.rotation.y    = PAN_OFFSET + PAN_AMP  * Math.sin(2*Math.PI*t/PERIOD);
+      tiltPivot.rotation.x =              TILT_AMP * Math.sin(2*Math.PI*2*t/PERIOD);
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+})();
+</script>
+
 </body>
 </html>
