@@ -71,6 +71,7 @@ RuntimeConfig RuntimeConfig::load(const std::string& path) {
 
         // Streaming
         get("stream_max_w",          cfg.stream_max_w);
+        get("stereo_camera_upside_down", cfg.stereo_camera_upside_down);
         get("thumb_jpeg_quality",    cfg.thumb_jpeg_quality);
 
         // Wheel follow
@@ -87,6 +88,13 @@ RuntimeConfig RuntimeConfig::load(const std::string& path) {
 
         // IMU tilt
         get("pixels_per_degree",    cfg.pixels_per_degree);
+
+        // PTU centre-to-level
+        get("ptu_level_p_gain",       cfg.ptu_level_p_gain);
+        get("ptu_level_max_sps",      cfg.ptu_level_max_sps);
+        get("ptu_level_deadband_deg", cfg.ptu_level_deadband_deg);
+        get("ptu_level_timeout_ms",   cfg.ptu_level_timeout_ms);
+        get("ptu_level_tilt_sign",    cfg.ptu_level_tilt_sign);
 
         // Stereo depth
         get("stereo_max_fps",        cfg.stereo_max_fps);
@@ -116,6 +124,7 @@ RuntimeConfig RuntimeConfig::load(const std::string& path) {
         get("zmq_detection_port",    cfg.zmq_detection_port);
         get("zmq_stereo_port",       cfg.zmq_stereo_port);
         get("zmq_disparity_port",    cfg.zmq_disparity_port);
+        get("zmq_thermal_port",      cfg.zmq_thermal_port);
 
         // Lidar
         get("lidar_port",           cfg.lidar_port);

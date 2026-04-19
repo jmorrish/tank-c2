@@ -88,7 +88,6 @@ private:
     std::string window_ = "YOLOv8 + BoTSORT + PTU";
 
     // autofocus click
-    int first_frame_width_ = 0;
     std::atomic<bool> secondCamFocusRequested_{false};
 
     // BoTSORT session track ID of the currently-followed person
@@ -98,6 +97,9 @@ private:
     zmq::context_t zmq_ctx_{1};
     zmq::socket_t zmq_pub_{zmq_ctx_, ZMQ_PUB};
     bool zmq_ready_ = false;
+    // Thermal (RTSP) frames published independently of detection
+    zmq::socket_t zmq_thermal_pub_{zmq_ctx_, ZMQ_PUB};
+    bool zmq_thermal_ready_ = false;
 
     // ── Cross-session target gallery ──────────────────────────────────────────
     std::vector<PersonRecord> gallery_;

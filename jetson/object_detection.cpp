@@ -55,6 +55,15 @@ bool ObjectDetection::start(){
         LOGE("ZMQ bind failed: " << e.what());
     }
 
+    try {
+        std::string thermal_addr = "tcp://127.0.0.1:" + std::to_string(cfg_.zmq_thermal_port);
+        zmq_thermal_pub_.bind(thermal_addr);
+        zmq_thermal_ready_ = true;
+        LOGI("ZMQ thermal publisher started on " << thermal_addr);
+    } catch (const zmq::error_t& e) {
+        LOGE("ZMQ thermal bind failed: " << e.what());
+    }
+
     return true;
 }
 
@@ -66,6 +75,8 @@ void ObjectDetection::stop(){
 
     zmq_ready_ = false;
     zmq_pub_.close();
+    zmq_thermal_ready_ = false;
+    zmq_thermal_pub_.close();
     zmq_ctx_.close();
 }
 
@@ -107,6 +118,21 @@ void ObjectDetection::rtspThreadFunc(){
         {
             std::lock_guard<std::mutex> lk(m2_);
             tmp.copyTo(frame2_);
+        }
+
+        // Publish thermal frame on dedicated ZMQ socket (independent of detection)
+        if (zmq_thermal_ready_) {
+            std::vector<uchar> buf;
+            std::vector<int> enc_params = {cv::IMWRITE_JPEG_QUALITY, 70};
+            if (cv::imencode(".jpg", tmp, buf, enc_params)) {
+                zmq::message_t zmqmsg(buf.size());
+                memcpy(zmqmsg.data(), buf.data(), buf.size());
+                try {
+                    zmq_thermal_pub_.send(zmqmsg, zmq::send_flags::dontwait);
+                } catch (const zmq::error_t& e) {
+                    LOGW("ZMQ thermal send failed: " << e.what());
+                }
+            }
         }
     }
 }
@@ -856,35 +882,16 @@ void ObjectDetection::mainLoop(){
             if (comms_) comms_->setDetectionFPS(fps);
         }
 
-        // ── Grab latest RTSP frame (for side-by-side) ────────────────────────
-        cv::Mat f2;
-        {
-            std::lock_guard<std::mutex> lk(m2_);
-            if (!frame2_.empty()) frame2_.copyTo(f2);
-        }
-
-        cv::Mat combined;
-        if (!f2.empty()){
-            if (frame.rows != f2.rows){
-                int newH = std::min(frame.rows, f2.rows);
-                cv::resize(frame, frame, cv::Size(), (float)newH/frame.rows, (float)newH/frame.rows);
-                cv::resize(f2, f2, cv::Size(), (float)newH/f2.rows, (float)newH/f2.rows);
-            }
-            first_frame_width_ = frame.cols;
-            cv::hconcat(frame, f2, combined);
-        } else {
-            combined = frame;
-        }
-
-        // ── ZMQ publish (scaled, non-blocking) ───────────────────────────────
+        // ── ZMQ publish (detection-only, scaled, non-blocking) ───────────────
+        // Thermal is published independently from rtspThreadFunc on its own ZMQ port.
         if (zmq_ready_) {
             const int STREAM_MAX_W = cfg_.stream_max_w;
             cv::Mat stream_frame;
-            if (combined.cols > STREAM_MAX_W) {
-                float scale = float(STREAM_MAX_W) / combined.cols;
-                cv::resize(combined, stream_frame, cv::Size(), scale, scale, cv::INTER_LINEAR);
+            if (frame.cols > STREAM_MAX_W) {
+                float scale = float(STREAM_MAX_W) / frame.cols;
+                cv::resize(frame, stream_frame, cv::Size(), scale, scale, cv::INTER_LINEAR);
             } else {
-                stream_frame = combined;
+                stream_frame = frame;
             }
             std::vector<uchar> buf;
             int quality = comms_ ? comms_->getStreamQuality() : 55;

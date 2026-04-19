@@ -177,4 +177,8 @@ private:
     // NMEA parsing helpers (called from sensor rx callback)
     void parseGGA(const std::string& line);
     void parseRMC(const std::string& line);
+
+    // PTU centre-to-level closed loop (tracked so repeated presses cancel old)
+    std::atomic<uint32_t> level_session_{0};
+    void runLevelTilt();
 };

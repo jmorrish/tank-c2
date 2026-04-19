@@ -140,8 +140,8 @@ const WIDGET_DEFS = {
       </div>`
   },
   'video-main': {
-    title: 'DETECTION + THERMAL', icon: '▸',
-    defaultGrid: { x: 0, y: 10, w: 8, h: 5 }, minW: 4, minH: 3,
+    title: 'DETECTION', icon: '▸',
+    defaultGrid: { x: 0, y: 10, w: 5, h: 5 }, minW: 3, minH: 3,
     noPad: true,
     buildContent: () => `
       <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
@@ -160,6 +160,21 @@ const WIDGET_DEFS = {
         <div style="font-size:10px;color:var(--muted)">CAMERA FEED UNAVAILABLE</div>
       </div>`,
     onAdd() { setTimeout(startStream, 200); }
+  },
+  'video-thermal': {
+    title: 'THERMAL', icon: '▸',
+    defaultGrid: { x: 5, y: 10, w: 3, h: 5 }, minW: 2, minH: 3,
+    noPad: true,
+    buildContent: () => `
+      <div style="position:absolute;top:8px;right:10px;z-index:10;display:flex;align-items:center;gap:8px">
+        <span id="thermalStatus" style="font-size:10px;letter-spacing:1px;color:var(--muted);background:rgba(10,14,26,.7);padding:2px 8px;border-radius:3px">CONNECTING</span>
+      </div>
+      <img id="thermalImg" alt="Thermal feed" style="width:100%;height:100%;display:none;object-fit:contain"
+        onerror="thermalErr()" onload="thermalOk()">
+      <div id="thermalPlaceholder" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;background:#050810">
+        <div style="font-size:11px;letter-spacing:2px;color:#333">CONNECTING</div>
+      </div>`,
+    onAdd() { setTimeout(startThermalStream, 300); }
   },
   'video-depth': {
     title: 'DEPTH', icon: '▸',
@@ -205,8 +220,9 @@ const DEFAULT_LAYOUT = [
   { type: 'wheel-ctrl',  x: 0,  y: 6,  w: 4, h: 4 },
   { type: 'ptu-ctrl',    x: 4,  y: 6,  w: 4, h: 4 },
   { type: 'actions',     x: 8,  y: 6,  w: 4, h: 3 },
-  { type: 'video-main',  x: 0,  y: 10, w: 8, h: 5 },
-  { type: 'video-depth', x: 8,  y: 10, w: 4, h: 5 },
+  { type: 'video-main',    x: 0,  y: 10, w: 5, h: 5 },
+  { type: 'video-thermal', x: 5,  y: 10, w: 3, h: 5 },
+  { type: 'video-depth',   x: 8,  y: 10, w: 4, h: 5 },
   { type: 'targets',     x: 0,  y: 15, w: 12, h: 3 }
 ];
 

@@ -187,6 +187,13 @@ void StereoDepth::loop(std::string device, const RuntimeConfig* cfg, bool share_
         Mat frame;
         if (!cap.retrieve(frame) || frame.empty()) continue;  // decode only now
 
+        // Rotate 180° if camera is mounted upside down. Rotating the full
+        // side-by-side frame simultaneously flips orientation AND swaps
+        // left↔right halves so the correct sensor feeds the correct rectify map.
+        if (cfg->stereo_camera_upside_down) {
+            cv::rotate(frame, frame, cv::ROTATE_180);
+        }
+
         // Log frame dimensions on first frame
         if (dbg_frame == 0)
             LOGI("StereoDepth: first frame " << frame.cols << "x" << frame.rows

@@ -39,7 +39,14 @@
     "learn_dup_thresh": 0.95,
 
     "stream_max_w": 1280,
+    "stereo_camera_upside_down": true,
     "thumb_jpeg_quality": 85,
+
+    "ptu_level_p_gain": 400.0,
+    "ptu_level_max_sps": 6000.0,
+    "ptu_level_deadband_deg": 0.5,
+    "ptu_level_timeout_ms": 8000,
+    "ptu_level_tilt_sign": -1,
 
     "follow_distance_m": 0.5,
     "wheel_gain_distance": 20000.0,
@@ -77,6 +84,7 @@
     "zmq_detection_port": 5555,
     "zmq_stereo_port": 5557,
     "zmq_disparity_port": 5558,
+    "zmq_thermal_port": 5560,
 
     "lidar_port": "/dev/ttyUSB0",
     "lidar_baud": 115200,

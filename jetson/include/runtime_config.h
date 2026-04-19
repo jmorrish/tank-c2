@@ -58,6 +58,13 @@ struct RuntimeConfig {
     int   stream_max_w             = 1280;
     int   thumb_jpeg_quality       = 85;
 
+    // ── Camera mounting ─────────────────────────────────────────────────────
+    // If the stereo camera is physically mounted 180° rotated, rotate every
+    // captured frame before split+rectify. This swaps left↔right halves AND
+    // flips orientation — correct sensor feeds correct StereoBM side, and
+    // YOLO sees people upright.
+    bool  stereo_camera_upside_down = false;
+
     // ── Wheel follow behaviour ──────────────────────────────────────────────
     float follow_distance_m        = 0.5f;
     float wheel_gain_distance      = 20000.0f;
@@ -72,6 +79,15 @@ struct RuntimeConfig {
 
     // ── IMU tilt feedforward ────────────────────────────────────────────────
     float pixels_per_degree        = 5.0f;
+
+    // ── PTU centre-to-level (closed-loop tilt on IMU pitch) ─────────────────
+    // When `manual_ptu:centre` is received, pan is sent to stepper-zero and
+    // the tilt axis is closed-loop driven until PTU pitch reads ~0°.
+    float ptu_level_p_gain         = 400.0f;   // tilt steps/sec per degree error
+    float ptu_level_max_sps        = 6000.0f;  // clamp
+    float ptu_level_deadband_deg   = 0.5f;     // stop when |pitch| below this
+    int   ptu_level_timeout_ms     = 8000;     // abort after this many ms
+    int   ptu_level_tilt_sign      = -1;       // flip to +1 if motion is wrong way
 
     // ── Stereo depth ────────────────────────────────────────────────────────
     float stereo_max_fps           = 10.0f;
@@ -101,6 +117,7 @@ struct RuntimeConfig {
     int   zmq_detection_port       = 5555;
     int   zmq_stereo_port          = 5557;
     int   zmq_disparity_port       = 5558;
+    int   zmq_thermal_port         = 5560;
 
     // ── Lidar ───────────────────────────────────────────────────────────────
     std::string lidar_port         = "/dev/ttyUSB0";

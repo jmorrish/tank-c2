@@ -279,6 +279,87 @@ app.get('/depth_snapshot', (req, res) => {
     res.end(latestDepthFrame);
 });
 
+// ── Thermal stream relay (RTSP thermal → mjpeg_bridge /thermal_stream) ────────
+const thermalStreamClients = new Set();
+let   latestThermalFrame   = null;
+let   thermalRelayOnline   = false;
+
+function dropThermalStreamClients() {
+    for (const res of thermalStreamClients) { try { res.end(); } catch (_) {} }
+    thermalStreamClients.clear();
+}
+function pushThermalFrame(jpeg) {
+    latestThermalFrame = jpeg;
+    const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`;
+    for (const res of thermalStreamClients) {
+        try { res.write(header); res.write(jpeg); res.write('\r\n'); }
+        catch (_) { thermalStreamClients.delete(res); }
+    }
+}
+function startThermalRelay() {
+    let buf = Buffer.alloc(0);
+    const req = http.get(
+        `http://${JETSON_HOST}:${MJPEG_PORT}/thermal_stream`,
+        { timeout: 8000 },
+        (upstream) => {
+            upstream.socket && upstream.socket.setTimeout(0);
+            thermalRelayOnline = true;
+            upstream.on('data', chunk => {
+                buf = Buffer.concat([buf, chunk]);
+                while (true) {
+                    const hEnd = buf.indexOf('\r\n\r\n');
+                    if (hEnd < 0) break;
+                    const header   = buf.slice(0, hEnd).toString();
+                    const lenMatch = header.match(/Content-Length:\s*(\d+)/i);
+                    if (!lenMatch) { buf = buf.slice(hEnd + 4); break; }
+                    const frameLen   = parseInt(lenMatch[1]);
+                    const frameStart = hEnd + 4;
+                    const frameEnd   = frameStart + frameLen;
+                    if (buf.length < frameEnd) break;
+                    pushThermalFrame(buf.slice(frameStart, frameEnd));
+                    buf = buf.slice(frameEnd);
+                }
+            });
+            const done = () => {
+                thermalRelayOnline = false; latestThermalFrame = null;
+                dropThermalStreamClients();
+                setTimeout(startThermalRelay, 3000);
+            };
+            upstream.on('end',   done);
+            upstream.on('error', done);
+        }
+    );
+    req.on('timeout', () => req.destroy());
+    req.on('error',   () => {
+        thermalRelayOnline = false; latestThermalFrame = null;
+        dropThermalStreamClients();
+        setTimeout(startThermalRelay, 3000);
+    });
+}
+startThermalRelay();
+
+app.get('/thermal_stream', (req, res) => {
+    if (!thermalRelayOnline) return res.status(503).end();
+    res.writeHead(200, {
+        'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
+        'Cache-Control': 'no-cache, no-store',
+        'Connection':    'keep-alive',
+    });
+    if (latestThermalFrame) {
+        res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${latestThermalFrame.length}\r\n\r\n`);
+        res.write(latestThermalFrame);
+        res.write('\r\n');
+    }
+    thermalStreamClients.add(res);
+    req.on('close', () => thermalStreamClients.delete(res));
+});
+
+app.get('/thermal_snapshot', (req, res) => {
+    if (!latestThermalFrame) return res.status(503).end();
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
+    res.end(latestThermalFrame);
+});
+
 // MJPEG stream for Chrome/Firefox/Android — returns 503 immediately if offline
 app.get('/stream', (req, res) => {
     if (!relayOnline) return res.status(503).end();

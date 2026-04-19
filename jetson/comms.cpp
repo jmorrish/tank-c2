@@ -105,6 +105,46 @@ bool Comms::sendPTUVelocity(float pan_sps, float tilt_sps){
     return control_link_.sendLine(oss.str());
 }
 
+// Closed-loop PTU tilt leveling — drives tilt axis until IMU pitch ≈ 0°.
+// IMU is mounted on the PTU so getLatestYPR() reports PTU orientation.
+// Terminates if a newer session starts, if the user leaves MANUAL mode, or
+// if the timeout expires.
+void Comms::runLevelTilt(){
+    const uint32_t my_session    = level_session_.load();
+    const float gain             = cfg_.ptu_level_p_gain;
+    const float max_sps          = cfg_.ptu_level_max_sps;
+    const float deadband         = cfg_.ptu_level_deadband_deg;
+    const int   timeout_ms       = cfg_.ptu_level_timeout_ms;
+    const int   sign             = cfg_.ptu_level_tilt_sign < 0 ? -1 : 1;
+
+    // Give P0T0 a moment to issue so we aren't fighting it immediately.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    auto t0 = std::chrono::steady_clock::now();
+    while (true) {
+        if (level_session_.load() != my_session) return;           // pre-empted
+        if (getMode() != ControlMode::MANUAL)    break;            // user took over
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        if (elapsed_ms > timeout_ms) { LOGW("PTU level timeout"); break; }
+
+        float yaw, pitch, roll; double age_ms;
+        if (!getLatestYPR(yaw, pitch, roll, age_ms) || age_ms > 500.0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+        if (std::fabs(pitch) < deadband) break;                    // done
+
+        float v = sign * gain * pitch;
+        if (v >  max_sps) v =  max_sps;
+        if (v < -max_sps) v = -max_sps;
+        sendPTUVelocity(0, v);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    if (level_session_.load() == my_session) sendPTUVelocity(0, 0);
+}
+
 bool Comms::sendWheels(int left_sps, int right_sps){
     std::ostringstream oss;
     oss << "LS" << left_sps << "RS" << right_sps;
@@ -441,9 +481,17 @@ std::string Comms::handleWebCommand(const std::string& cmd) {
     }
 
     // ── Manual PTU centre ─────────────────────────────────────────────────────
+    // Pan → stepper-zero (P0). Tilt → closed-loop on PTU IMU pitch until ~0°.
     if (cmd == "manual_ptu:centre") {
-        sendPTUVelocity(0, 0);                                          // stop velocity
-        control_link_.sendLine("P0T0");     // hard position centre
+        setMode(ControlMode::MANUAL);
+        sendPTUVelocity(0, 0);              // cancel any velocity
+        control_link_.sendLine("P0T0");     // send pan to stepper zero (tilt will
+                                            // be immediately overridden by the
+                                            // closed-loop below)
+        // Bump session token so any running level thread aborts.
+        uint32_t my_session = level_session_.fetch_add(1) + 1;
+        std::thread([this, my_session]() { runLevelTilt(); }).detach();
+        (void)my_session;
         return "";
     }
 

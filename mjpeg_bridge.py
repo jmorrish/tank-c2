@@ -24,9 +24,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 log = logging.getLogger('mjpeg')
 
-ZMQ_ADDR       = "tcp://127.0.0.1:5555"
-ZMQ_DEPTH_ADDR = "tcp://127.0.0.1:5558"
-HTTP_PORT      = 8080
+ZMQ_ADDR         = "tcp://127.0.0.1:5555"
+ZMQ_DEPTH_ADDR   = "tcp://127.0.0.1:5558"
+ZMQ_THERMAL_ADDR = "tcp://127.0.0.1:5560"
+HTTP_PORT        = 8080
 TARGETS_DIR    = "/home/james/tank_targets"
 TARGET_FPS     = 25
 STALE_TIMEOUT  = 5.0   # seconds without a frame before we consider ZMQ dead
@@ -43,6 +44,11 @@ lock        = threading.Lock()
 depth_latest      = None
 depth_latest_time = 0.0
 depth_lock        = threading.Lock()
+
+# Thermal camera shared state
+thermal_latest      = None
+thermal_latest_time = 0.0
+thermal_lock        = threading.Lock()
 
 
 # ── ZMQ receiver — reconnects automatically when C++ app restarts ────────────
@@ -131,6 +137,46 @@ def zmq_depth_receiver():
 
 
 threading.Thread(target=zmq_depth_receiver, daemon=True, name="zmq-depth").start()
+
+
+# ── Thermal ZMQ receiver ──────────────────────────────────────────────────────
+
+def zmq_thermal_receiver():
+    global thermal_latest, thermal_latest_time
+    ctx = None
+    sock = None
+    while True:
+        try:
+            if ctx is None:
+                ctx = zmq.Context()
+            if sock is None:
+                log.info(f"Connecting to thermal ZMQ at {ZMQ_THERMAL_ADDR}")
+                sock = ctx.socket(zmq.SUB)
+                sock.setsockopt(zmq.SUBSCRIBE, b"")
+                sock.setsockopt(zmq.RCVTIMEO, 2000)
+                sock.setsockopt(zmq.CONFLATE, 1)
+                sock.setsockopt(zmq.LINGER, 0)
+                sock.connect(ZMQ_THERMAL_ADDR)
+            data = sock.recv()
+            with thermal_lock:
+                thermal_latest      = data
+                thermal_latest_time = time.monotonic()
+        except zmq.Again:
+            pass
+        except zmq.ZMQError as e:
+            log.warning(f"Thermal ZMQ error: {e} — resetting in 2s")
+            try:
+                sock.close()
+            except Exception:
+                pass
+            sock = None
+            time.sleep(2.0)
+        except Exception as e:
+            log.warning(f"Thermal receiver error: {e}")
+            time.sleep(1.0)
+
+
+threading.Thread(target=zmq_thermal_receiver, daemon=True, name="zmq-thermal").start()
 
 
 # ── MJPEG HTTP handler ────────────────────────────────────────────────────────
@@ -222,6 +268,54 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             except Exception:
                 pass
+            return
+
+        # ── GET /thermal_stream → thermal camera MJPEG ────────────────────────
+        if self.path in ('/thermal_stream', '/thermal_stream/'):
+            self.send_response(200)
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=tankframe')
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            try:
+                while True:
+                    t0 = time.monotonic()
+                    with thermal_lock:
+                        frame = thermal_latest
+                        age   = t0 - thermal_latest_time if thermal_latest_time else STALE_TIMEOUT + 1
+                    if frame and age < STALE_TIMEOUT:
+                        self.wfile.write(
+                            BOUNDARY + b"\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
+                            frame + b"\r\n"
+                        )
+                        self.wfile.flush()
+                    elapsed = time.monotonic() - t0
+                    sleep   = INTERVAL - elapsed
+                    if sleep > 0:
+                        time.sleep(sleep)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception:
+                pass
+            return
+
+        # ── GET /thermal_snapshot → single thermal JPEG ───────────────────────
+        if self.path in ('/thermal_snapshot', '/thermal_snapshot/'):
+            with thermal_lock:
+                frame = thermal_latest
+            if frame:
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/jpeg')
+                self.send_header('Content-Length', str(len(frame)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(frame)
+            else:
+                self.send_response(503)
+                self.end_headers()
             return
 
         # ── GET /depth_snapshot → single depth JPEG ───────────────────────────

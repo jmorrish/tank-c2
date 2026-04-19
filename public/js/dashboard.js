@@ -360,6 +360,55 @@ function depthErr() {
   if (depthRunning) depthRetryTimer = setTimeout(startDepthStream, 4000);
 }
 
+// ── Thermal stream ────────────────────────────────────────────────────────
+let thermalOnline = false, thermalSnapshotTimer = null, thermalRetryTimer = null;
+
+function startThermalStream() {
+  const img = document.getElementById('thermalImg');
+  if (!img) return;
+  if (isSafari) {
+    img.src = '/thermal_snapshot?' + Date.now();
+  } else {
+    img.src = '/thermal_stream?' + Date.now();
+  }
+}
+
+function thermalSnapshotTick() {
+  if (!isSafari || !thermalOnline) return;
+  const img = document.getElementById('thermalImg');
+  if (!img) return;
+  const next = new Image();
+  next.onload  = () => { img.src = next.src; thermalSnapshotTimer = setTimeout(thermalSnapshotTick, 150); };
+  next.onerror = () => thermalErr();
+  next.src = '/thermal_snapshot?' + Date.now();
+}
+
+function thermalOk() {
+  thermalOnline = true;
+  const img = document.getElementById('thermalImg');
+  const ph = document.getElementById('thermalPlaceholder');
+  const s = document.getElementById('thermalStatus');
+  if (!img) return;
+  img.style.display = 'block';
+  if (ph) ph.style.display = 'none';
+  if (s) { s.textContent = 'LIVE'; s.style.color = 'var(--accent)'; }
+  if (isSafari) { clearTimeout(thermalSnapshotTimer); thermalSnapshotTimer = setTimeout(thermalSnapshotTick, 150); }
+}
+
+function thermalErr() {
+  thermalOnline = false;
+  clearTimeout(thermalSnapshotTimer);
+  const img = document.getElementById('thermalImg');
+  const ph = document.getElementById('thermalPlaceholder');
+  const s = document.getElementById('thermalStatus');
+  if (!img) return;
+  img.style.display = 'none';
+  if (ph) { ph.style.display = 'flex'; ph.innerHTML = '<div style="font-size:11px;letter-spacing:2px;color:var(--danger)">NO SIGNAL</div>'; }
+  if (s) { s.textContent = 'NO SIGNAL'; s.style.color = 'var(--danger)'; }
+  clearTimeout(thermalRetryTimer);
+  thermalRetryTimer = setTimeout(startThermalStream, 5000);
+}
+
 // ── Stale-stream watchdog ─────────────────────────────────────────────────
 let _staleCanvas, _staleCtx, _lastPixel = null, _staleCount = 0;
 function initStaleWatchdog() {
